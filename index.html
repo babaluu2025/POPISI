@@ -45,13 +45,15 @@
         .popis-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
 
         .artikal-table { border-collapse: collapse; width: 100%; background: white; font-size: 14px; }
-        .artikal-table th, .artikal-table td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        .artikal-table th, .artikal-table td { border: 1px solid #ccc; padding: 6px; text-align: left; }
         .artikal-table th { background: #f0f0f0; font-weight: bold; }
         .artikal-table .manjak { color: #dc3545; font-weight: bold; }
         .artikal-table .visak { color: #28a745; font-weight: bold; }
         .artikal-table .kolicina { font-weight: bold; }
         .artikal-table tr:hover { background: #f9f9f9; }
-        .artikal-table .total-row { background: #fff3cd; font-weight: bold; font-size: 16px; }
+        .artikal-table .total-row { background: #fff3cd; font-weight: bold; font-size: 15px; }
+        .cijena-edit { cursor: pointer; border-bottom: 1px dashed #667eea; }
+        .cijena-edit:hover { background: #eef2ff; }
 
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
         .modal.active { display: flex; }
@@ -140,13 +142,14 @@
             <div style="font-size:12px;color:#666;margin-top:5px;">Kolone: Naziv, J.M., Manjak, Višak</div>
         </div>
         <input type="file" id="excelInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajExcel(event)">
+        <div id="previewNovi" style="margin-top:15px;"></div>
         <button onclick="sacuvajNoviPopis()" class="btn btn-success" style="width:100%;padding:12px;font-size:16px;margin-top:10px;">💾 Sačuvaj popis</button>
     </div>
 </div>
 
 <!-- MODAL ZA CJENOVNIK -->
 <div id="cjenovnikModal" class="modal">
-    <div class="modal-content" style="max-width:900px;">
+    <div class="modal-content" style="max-width:1000px;">
         <div class="modal-header"><h3>📋 Cjenovnik</h3><button onclick="closeModal('cjenovnikModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
             <button onclick="showDodajArtikal()" class="btn btn-success">+ Dodaj artikal</button>
@@ -158,7 +161,7 @@
     </div>
 </div>
 
-<!-- MODAL ZA DODAVANJE ARTIKLA -->
+<!-- MODAL ZA DODAVANJE/UREĐIVANJE ARTIKLA -->
 <div id="addArtikalModal" class="modal">
     <div class="modal-content">
         <div class="modal-header"><h3 id="addArtikalTitle">Dodaj artikal</h3><button onclick="closeModal('addArtikalModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
@@ -191,7 +194,10 @@
     <div class="modal-content" style="max-width:1100px;">
         <div class="modal-header"><h3 id="popisTitle"></h3><button onclick="closeModal('popisModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
         <div id="popisContent"></div>
-        <button onclick="stampajPopis()" class="btn btn-info no-print" style="width:100%;margin-top:10px;">🖨️ Štampaj A4</button>
+        <div style="display:flex;gap:10px;margin-top:10px;" class="no-print">
+            <button onclick="stampajPopis()" class="btn btn-info" style="flex:1;">🖨️ Štampaj A4</button>
+            <button onclick="obrisiPopis()" class="btn btn-danger" style="flex:1;">🗑 Obriši popis</button>
+        </div>
     </div>
 </div>
 
@@ -233,7 +239,6 @@
 // ==================== KONFIGURACIJA ====================
 const SUPABASE_URL = 'https://itoyvqqssqmeyxawvulq.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_nbUWlCIXbB48NoBRhH4ucg_PfCAmau1';
-const GOOGLE_DRIVE_URL = 'OVDE_ZALEPI_SVOJ_APPS_SCRIPT_URL';
 
 let supabaseClient = null;
 try { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
@@ -241,10 +246,11 @@ try { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 // ==================== PODACI ====================
 let data = {
     cjenovnik: [],  // { naziv, grupa, jm, cijena }
-    popisi: []      // { mesec, godina, sektor, artikli: [{ naziv, jm, manjak, visak, kolicina, vrijednost }] }
+    popisi: []      // { mesec, godina, sektor, artikli: [{ naziv, jm, manjak, visak, kolicina, cijena, vrijednost }] }
 };
 let trenutniPopis = null;
 let editingArtikalIndex = null;
+let prikazanPopisIndex = null;
 
 const MESECI = ['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
 
@@ -277,7 +283,10 @@ function normalize(str) {
     return (str || '').toString().toUpperCase().trim().replace(/\s+/g, ' ');
 }
 
-function getMesecIme(index) { return MESECI[index]; }
+function formatBroj(n) {
+    if (n === 0 || n === undefined || n === null) return '0';
+    return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 });
+}
 
 function showModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
@@ -288,7 +297,6 @@ document.getElementById('loginBtn').onclick = async () => {
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('appContent').style.display = 'block';
         await loadFromCloud();
-        // Popuni mesec dropdown
         const sel = document.getElementById('noviMesec');
         sel.innerHTML = MESECI.map((m, i) => `<option value="${i}">${m}</option>`).join('');
         sel.value = new Date().getMonth();
@@ -302,15 +310,14 @@ document.getElementById('logoutBtn').onclick = () => {
     document.getElementById('loginScreen').style.display = 'flex';
 };
 
-// ==================== GLAVNI EKRAN - LISTA POPISA ====================
+// ==================== GLAVNI EKRAN ====================
 function renderMain() {
     const c = document.getElementById('mainContent');
     if (data.popisi.length === 0) {
-        c.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Nema popisa. Kliknite "+ Novi popis" da dodate.</p>';
+        c.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Nema popisa. Kliknite "+ Novi popis".</p>';
         return;
     }
     let html = '<h2 style="margin-bottom:15px;">📋 Popisi</h2>';
-    // Sortiraj po godini i mesecu (najnoviji prvi)
     const sorted = [...data.popisi].sort((a, b) => {
         if (a.godina !== b.godina) return b.godina - a.godina;
         return b.mesec - a.mesec;
@@ -327,7 +334,7 @@ function renderMain() {
                         <span style="font-size:13px;color:#666;">${p.artikli.length} artikala</span>
                     </div>
                     <div style="text-align:right;">
-                        <div style="font-size:20px;font-weight:bold;color:#dc3545;">-${ukupnoManjak.toFixed(2)} €</div>
+                        <div style="font-size:20px;font-weight:bold;color:#dc3545;">${ukupnoManjak.toFixed(2)} €</div>
                         <span style="font-size:11px;color:#666;">Ukupno manjak</span>
                     </div>
                 </div>
@@ -340,6 +347,8 @@ function renderMain() {
 // ==================== NOVI POPIS ====================
 function showNoviPopis() {
     trenutniPopis = null;
+    document.getElementById('excelInput').value = '';
+    document.getElementById('previewNovi').innerHTML = '';
     showModal('noviPopisModal');
 }
 
@@ -349,10 +358,10 @@ function ucitajExcel(event) {
     const reader = new FileReader();
     reader.onload = (e) => {
         const wb = XLSX.read(e.target.result, { type: 'binary' });
+        // Uzmi prvi list
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
         
-        // Nađi header red (preskoči prazne)
         let headerIndex = -1;
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i].map(c => (c || '').toString().toLowerCase());
@@ -365,7 +374,7 @@ function ucitajExcel(event) {
         
         const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
         const idxNaziv = header.findIndex(h => h.includes('naziv'));
-        const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm' || h.includes('jm'));
+        const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
         const idxManjak = header.findIndex(h => h.includes('manjak'));
         const idxVisak = header.findIndex(h => h.includes('višak') || h.includes('visak'));
         
@@ -374,17 +383,17 @@ function ucitajExcel(event) {
             const row = rows[i];
             if (!row || !row[idxNaziv]) continue;
             const naziv = row[idxNaziv].toString().trim();
-            if (!naziv || naziv.toLowerCase().includes('ukupno')) continue;
+            if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
             
             const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
             const manjak = idxManjak >= 0 ? parseFloat((row[idxManjak] || 0).toString().replace(',', '.')) || 0 : 0;
             const visak = idxVisak >= 0 ? parseFloat((row[idxVisak] || 0).toString().replace(',', '.')) || 0 : 0;
             
-            // Nađi cijenu u cjenovniku
+            // ** Cijena se vuče iz cjenovnika **
             const cjenovnikArtikal = data.cjenovnik.find(c => normalize(c.naziv) === normalize(naziv));
             const cijena = cjenovnikArtikal ? cjenovnikArtikal.cijena : 0;
-            const kolicina = manjak - visak;
-            const vrijednost = manjak * cijena;
+            const kolicina = visak - manjak;  // ISPRAVLJENO: visak - manjak
+            const vrijednost = manjak * cijena;  // Manjak × cijena
             
             artikli.push({
                 naziv: naziv,
@@ -401,7 +410,28 @@ function ucitajExcel(event) {
         if (artikli.length === 0) { alert('❌ Nema artikala u fajlu'); return; }
         
         trenutniPopis = { artikli: artikli };
-        alert(`✅ Učitano ${artikli.length} artikala. Klikni "Sačuvaj popis" da potvrdiš.`);
+        
+        // Preview
+        let preview = `<div style="background:#e8f5e9;padding:10px;border-radius:5px;margin-bottom:10px;">
+            <strong>✅ Učitano ${artikli.length} artikala</strong>
+        </div>`;
+        preview += '<table class="artikal-table" style="font-size:12px;"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena</th><th>Vrijednost</th></tr></thead><tbody>';
+        let ukupno = 0;
+        artikli.forEach(a => {
+            ukupno += a.vrijednost;
+            preview += `<tr>
+                <td>${a.naziv}</td>
+                <td>${a.jm}</td>
+                <td style="color:#dc3545;">${formatBroj(a.manjak)}</td>
+                <td style="color:#28a745;">${formatBroj(a.visak)}</td>
+                <td style="font-weight:bold;">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
+                <td>${a.cijena.toFixed(3)}</td>
+                <td style="font-weight:bold;">${a.vrijednost.toFixed(2)} €</td>
+            </tr>`;
+        });
+        preview += `<tr class="total-row"><td colspan="6" style="text-align:right;">UKUPNO MANJAK:</td><td>${ukupno.toFixed(2)} €</td></tr>`;
+        preview += '</tbody></table>';
+        document.getElementById('previewNovi').innerHTML = preview;
     };
     reader.readAsBinaryString(file);
 }
@@ -416,7 +446,6 @@ async function sacuvajNoviPopis() {
     const godina = parseInt(document.getElementById('noviGodina').value);
     const sektor = document.getElementById('noviSektor').value;
     
-    // Provera duplikata
     const exists = data.popisi.find(p => p.mesec === mesec && p.godina === godina && p.sektor === sektor);
     if (exists) {
         if (!confirm('⚠️ Popis za taj mesec/sektor već postoji. Prepisati?')) return;
@@ -443,6 +472,7 @@ async function sacuvajNoviPopis() {
 // ==================== PRIKAZ POPISA ====================
 function prikaziPopis(index) {
     const p = data.popisi[index];
+    prikazanPopisIndex = index;
     document.getElementById('popisTitle').textContent = `📅 ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}`;
     
     const c = document.getElementById('popisContent');
@@ -467,13 +497,17 @@ function prikaziPopis(index) {
     html += '</tbody></table>';
     
     c.innerHTML = html;
-    window._prikazanPopisIndex = index;
     showModal('popisModal');
 }
 
-function formatBroj(n) {
-    if (n === 0) return '0';
-    return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 });
+async function obrisiPopis() {
+    if (prikazanPopisIndex === null) return;
+    if (!confirm('⚠️ Obrisati ceo popis?')) return;
+    data.popisi.splice(prikazanPopisIndex, 1);
+    await saveToCloud();
+    closeModal('popisModal');
+    prikazanPopisIndex = null;
+    renderMain();
 }
 
 // ==================== CJENOVNIK ====================
@@ -490,20 +524,23 @@ function renderCjenovnik() {
     if (search) filtered = filtered.filter(a => normalize(a.naziv).includes(search));
     
     if (filtered.length === 0) {
-        c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema artikala. Dodajte ih ručno ili uploadujte.</p>';
+        c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema artikala. Dodajte ih ručno ili uploadujte Excel.</p>';
         return;
     }
     
-    let html = '<table class="artikal-table"><thead><tr>' +
+    let html = `<p style="margin-bottom:10px;color:#666;">Ukupno: ${data.cjenovnik.length} artikala</p>`;
+    html += '<table class="artikal-table"><thead><tr>' +
         '<th>Naziv</th><th>Grupa</th><th>J.M.</th><th>Cijena</th><th>Akcije</th>' +
         '</tr></thead><tbody>';
     filtered.forEach(a => {
         const idx = data.cjenovnik.indexOf(a);
         html += `<tr>
             <td>${a.naziv}</td>
-            <td>${a.grupa || ''}</td>
-            <td>${a.jm || ''}</td>
-            <td style="font-weight:bold;">${(a.cijena || 0).toFixed(3)} €</td>
+            <td>${a.grupa || '-'}</td>
+            <td>${a.jm || '-'}</td>
+            <td class="cijena-edit" onclick="urediArtikal(${idx})" title="Klikni za izmenu" style="font-weight:bold;color:#667eea;">
+                ${(a.cijena || 0).toFixed(3)} € ✏️
+            </td>
             <td>
                 <button class="btn btn-sm btn-info" onclick="urediArtikal(${idx})">✏️</button>
                 <button class="btn btn-sm btn-danger" onclick="obrisiArtikal(${idx})">🗑</button>
@@ -545,7 +582,14 @@ async function sacuvajArtikal() {
     if (editingArtikalIndex !== null) {
         data.cjenovnik[editingArtikalIndex] = { naziv, grupa, jm, cijena };
     } else {
-        data.cjenovnik.push({ naziv, grupa, jm, cijena });
+        // Provera duplikata
+        const existing = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv));
+        if (existing >= 0) {
+            if (!confirm('⚠️ Artikal sa tim nazivom već postoji. Prepisati?')) return;
+            data.cjenovnik[existing] = { naziv, grupa, jm, cijena };
+        } else {
+            data.cjenovnik.push({ naziv, grupa, jm, cijena });
+        }
     }
     
     await saveToCloud();
@@ -572,18 +616,18 @@ function ucitajCjenovnik(event) {
         let headerIndex = -1;
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i].map(c => (c || '').toString().toLowerCase());
-            if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('cijena') || c.includes('cijena'))) {
+            if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('cijena'))) {
                 headerIndex = i;
                 break;
             }
         }
-        if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red'); return; }
+        if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red (Naziv, Cijena)'); return; }
         
         const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
         const idxNaziv = header.findIndex(h => h.includes('naziv'));
         const idxGrupa = header.findIndex(h => h.includes('grupa'));
         const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
-        const idxCijena = header.findIndex(h => h.includes('cijena') || h.includes('cijena'));
+        const idxCijena = header.findIndex(h => h.includes('cijena') || h.includes('cijena') || h.includes('rabat'));
         
         let count = 0;
         for (let i = headerIndex + 1; i < rows.length; i++) {
@@ -593,9 +637,18 @@ function ucitajCjenovnik(event) {
             if (!naziv) continue;
             const grupa = idxGrupa >= 0 ? (row[idxGrupa] || '').toString().trim() : '';
             const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
-            const cijena = idxCijena >= 0 ? parseFloat((row[idxCijena] || 0).toString().replace(',', '.')) || 0 : 0;
+            // Uzmi zadnju kolonu kao cijenu (sa rabatom)
+            let cijena = 0;
+            if (idxCijena >= 0) {
+                cijena = parseFloat((row[idxCijena] || 0).toString().replace(',', '.')) || 0;
+            } else {
+                // Ako nema headera, uzmi zadnju numeričku kolonu
+                for (let j = row.length - 1; j >= 0; j--) {
+                    const val = parseFloat((row[j] || '').toString().replace(',', '.'));
+                    if (!isNaN(val) && val > 0 && val < 10000) { cijena = val; break; }
+                }
+            }
             
-            // Provera da li već postoji
             const existing = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv));
             if (existing >= 0) {
                 data.cjenovnik[existing] = { naziv, grupa, jm, cijena };
@@ -624,7 +677,6 @@ function renderManager() {
     const sektor = document.getElementById('managerSektor').value;
     const c = document.getElementById('managerContent');
     
-    // Filtriraj popise
     const popisi = data.popisi.filter(p => p.godina === godina && p.sektor === sektor)
         .sort((a, b) => a.mesec - b.mesec);
     
@@ -633,20 +685,17 @@ function renderManager() {
         return;
     }
     
-    // Skupi sve artikle iz svih popisa
     const artikliSet = new Set();
     popisi.forEach(p => p.artikli.forEach(a => artikliSet.add(a.naziv)));
     const artikli = Array.from(artikliSet).sort();
     
-    // Header sa mesecima
     let html = '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr>';
-    html += '<th style="min-width:200px;">Artikal</th>';
+    html += '<th style="min-width:180px;">Artikal</th>';
     popisi.forEach(p => {
         html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>Manjak €</small></th>`;
     });
     html += '<th>UKUPNO</th></tr></thead><tbody>';
     
-    // Sumarno po artiklu
     const totalPoMjesecu = {};
     artikli.forEach(naziv => {
         html += `<tr><td style="font-weight:bold;">${naziv}</td>`;
@@ -662,7 +711,6 @@ function renderManager() {
         html += `<td style="font-weight:bold;background:#fff3cd;">${ukupnoArtikal.toFixed(2)} €</td></tr>`;
     });
     
-    // Ukupno po mesecima
     html += `<tr class="total-row"><td>UKUPNO:</td>`;
     let grand = 0;
     popisi.forEach(p => {
@@ -678,9 +726,8 @@ function renderManager() {
 
 // ==================== ŠTAMPANJE ====================
 function stampajPopis() {
-    const index = window._prikazanPopisIndex;
-    if (index === undefined) return;
-    const p = data.popisi[index];
+    if (prikazanPopisIndex === null) return;
+    const p = data.popisi[prikazanPopisIndex];
     
     let printContent = `<h2 style="text-align:center;">${MESECI[p.mesec].toUpperCase()} ${p.godina} - MANJAK ${p.sektor}</h2>`;
     printContent += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:15px;">';
