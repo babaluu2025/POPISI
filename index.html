@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Popis ☁️</title>
+    <meta name="theme-color" content="#667eea">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+    <script>
+        const blob = new Blob([JSON.stringify({
+            name: "Popis ☁️", short_name: "Popis", start_url: "/", display: "standalone",
+            background_color: "#f5f5f5", theme_color: "#667eea",
+            icons: [{src:"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>",sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"}]
+        })], {type:'application/json'});
+        document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${URL.createObjectURL(blob)}">`);
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; overflow-x: auto; }
+        .container { min-width: 900px; max-width: 1400px; margin: 0 auto; padding: 15px; }
+
+        .login-container { display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .login-box { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align: center; width: 90%; max-width: 400px; }
+        .login-icon { font-size: 4rem; margin-bottom: 20px; }
+        .password-input { margin: 20px 0; }
+        .password-input input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 5px; font-size: 16px; }
+        .login-btn { background: #667eea; color: white; border: none; padding: 12px 30px; border-radius: 5px; font-size: 16px; cursor: pointer; width: 100%; }
+
+        header { background: white; padding: 15px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .header-content { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .btn { padding: 10px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin: 1px; color: white; font-weight: bold; white-space: nowrap; }
+        .btn-success { background: #28a745; }
+        .btn-info { background: #17a2b8; }
+        .btn-danger { background: #dc3545; }
+        .btn-warning { background: #ffc107; color: black; }
+        .btn-sm { padding: 4px 8px; font-size: 12px; }
+
+        .sync-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+        .sync-online { background: #28a745; }
+        .sync-offline { background: #dc3545; }
+
+        .popis-card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 5px rgba(0,0,0,0.1); cursor: pointer; }
+        .popis-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+
+        .artikal-table { border-collapse: collapse; width: 100%; background: white; font-size: 14px; }
+        .artikal-table th, .artikal-table td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        .artikal-table th { background: #f0f0f0; font-weight: bold; }
+        .artikal-table .manjak { color: #dc3545; font-weight: bold; }
+        .artikal-table .visak { color: #28a745; font-weight: bold; }
+        .artikal-table .kolicina { font-weight: bold; }
+        .artikal-table tr:hover { background: #f9f9f9; }
+        .artikal-table .total-row { background: #fff3cd; font-weight: bold; font-size: 16px; }
+
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; padding: 25px; border-radius: 10px; max-width: 700px; width: 90%; max-height: 85vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .search-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px; font-size: 16px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 14px; }
+
+        .upload-area { border: 2px dashed #667eea; padding: 20px; text-align: center; border-radius: 8px; margin: 15px 0; cursor: pointer; background: #f8f9ff; }
+        .upload-area:hover { background: #eef2ff; }
+
+        @media print {
+            @page { size: A4 landscape; margin: 8mm; }
+            body { background: white !important; }
+            .no-print { display: none !important; }
+            .artikal-table { font-size: 11px !important; }
+            .artikal-table th, .artikal-table td { padding: 4px !important; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="login-container">
+    <div class="login-box">
+        <div class="login-icon">📊</div>
+        <h1>Popis</h1>
+        <p>Unesite šifru</p>
+        <div class="password-input"><input type="password" id="passwordInput" placeholder="Šifra" autocomplete="off" value="123"></div>
+        <button id="loginBtn" class="login-btn">Pristupi</button>
+        <div style="margin-top:15px;color:#666;">Šifra: <strong>123</strong></div>
+    </div>
+</div>
+
+<!-- APLIKACIJA -->
+<div id="appContent" style="display:none;">
+    <header class="no-print">
+        <div class="container header-content">
+            <h1>📊 Popis <span id="syncDot" class="sync-indicator sync-offline" title="Sinhronizacija"></span></h1>
+            <div>
+                <button onclick="showNoviPopis()" class="btn btn-success">+ Novi popis</button>
+                <button onclick="showCjenovnik()" class="btn btn-info">📋 Cjenovnik</button>
+                <button onclick="showManager()" class="btn btn-warning">👨‍💼 Menadžer</button>
+                <button onclick="exportData()" class="btn btn-info">📤 Export</button>
+                <button onclick="importData()" class="btn btn-info">📂 Uvoz</button>
+                <button onclick="resetAll()" class="btn btn-danger">🔄 Reset</button>
+                <button id="logoutBtn" class="btn btn-danger">Odjava</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="mainContent"></div>
+    </div>
+</div>
+
+<!-- MODAL ZA NOVI POPIS -->
+<div id="noviPopisModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header"><h3>📅 Novi popis</h3><button onclick="closeModal('noviPopisModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="form-group">
+            <label>Mesec:</label>
+            <select id="noviMesec" class="search-input"></select>
+        </div>
+        <div class="form-group">
+            <label>Godina:</label>
+            <select id="noviGodina" class="search-input">
+                <option value="2024">2024</option>
+                <option value="2025">2025</option>
+                <option value="2026">2026</option>
+                <option value="2027">2027</option>
+                <option value="2028">2028</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Sektor:</label>
+            <select id="noviSektor" class="search-input">
+                <option value="ŠANK">ŠANK</option>
+                <option value="KUHINJA">KUHINJA</option>
+            </select>
+        </div>
+        <div class="upload-area" onclick="document.getElementById('excelInput').click()">
+            <div style="font-size:40px;">📂</div>
+            <div style="margin-top:10px;font-weight:bold;">Klikni da učitaš Excel/CSV</div>
+            <div style="font-size:12px;color:#666;margin-top:5px;">Kolone: Naziv, J.M., Manjak, Višak</div>
+        </div>
+        <input type="file" id="excelInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajExcel(event)">
+        <button onclick="sacuvajNoviPopis()" class="btn btn-success" style="width:100%;padding:12px;font-size:16px;margin-top:10px;">💾 Sačuvaj popis</button>
+    </div>
+</div>
+
+<!-- MODAL ZA CJENOVNIK -->
+<div id="cjenovnikModal" class="modal">
+    <div class="modal-content" style="max-width:900px;">
+        <div class="modal-header"><h3>📋 Cjenovnik</h3><button onclick="closeModal('cjenovnikModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
+            <button onclick="showDodajArtikal()" class="btn btn-success">+ Dodaj artikal</button>
+            <button onclick="document.getElementById('cjenovnikUpload').click()" class="btn btn-info">📂 Upload cjenovnik</button>
+            <input type="file" id="cjenovnikUpload" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajCjenovnik(event)">
+            <input type="text" id="cjenovnikSearch" placeholder="🔍 Pretraži..." class="search-input" style="flex:1;min-width:200px;" oninput="renderCjenovnik()">
+        </div>
+        <div id="cjenovnikContent"></div>
+    </div>
+</div>
+
+<!-- MODAL ZA DODAVANJE ARTIKLA -->
+<div id="addArtikalModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header"><h3 id="addArtikalTitle">Dodaj artikal</h3><button onclick="closeModal('addArtikalModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="form-group">
+            <label>Naziv artikla:</label>
+            <input type="text" id="newArtikalNaziv" class="search-input" placeholder="npr. COCA COLA 0,25">
+        </div>
+        <div class="form-group">
+            <label>Grupa:</label>
+            <input type="text" id="newArtikalGrupa" class="search-input" placeholder="npr. GAZIRANI SOKOVI">
+        </div>
+        <div class="form-group">
+            <label>J.M.:</label>
+            <select id="newArtikalJM" class="search-input">
+                <option value="KOM.">KOM.</option>
+                <option value="LIT.">LIT.</option>
+                <option value="KG.">KG.</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Cijena po jedinici (€):</label>
+            <input type="number" id="newArtikalCijena" class="search-input" placeholder="npr. 0.568" step="any" min="0">
+        </div>
+        <button onclick="sacuvajArtikal()" class="btn btn-success" style="width:100%;padding:12px;">💾 Sačuvaj</button>
+    </div>
+</div>
+
+<!-- MODAL ZA PRIKAZ POPISA -->
+<div id="popisModal" class="modal">
+    <div class="modal-content" style="max-width:1100px;">
+        <div class="modal-header"><h3 id="popisTitle"></h3><button onclick="closeModal('popisModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div id="popisContent"></div>
+        <button onclick="stampajPopis()" class="btn btn-info no-print" style="width:100%;margin-top:10px;">🖨️ Štampaj A4</button>
+    </div>
+</div>
+
+<!-- MODAL ZA MENADŽER -->
+<div id="managerModal" class="modal">
+    <div class="modal-content" style="max-width:1100px;">
+        <div class="modal-header"><h3>👨‍💼 Menadžer</h3><button onclick="closeModal('managerModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
+            <select id="managerGodina" onchange="renderManager()" class="search-input" style="flex:1;">
+                <option value="2024">2024</option>
+                <option value="2025">2025</option>
+                <option value="2026">2026</option>
+                <option value="2027">2027</option>
+                <option value="2028">2028</option>
+            </select>
+            <select id="managerSektor" onchange="renderManager()" class="search-input" style="flex:1;">
+                <option value="ŠANK">ŠANK</option>
+                <option value="KUHINJA">KUHINJA</option>
+            </select>
+        </div>
+        <div id="managerContent"></div>
+        <button onclick="stampajManager()" class="btn btn-info no-print" style="width:100%;margin-top:10px;">🖨️ Štampaj A4</button>
+    </div>
+</div>
+
+<!-- MODAL ZA EXPORT -->
+<div id="exportModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header"><h3>📤 Izvoz podataka</h3><button onclick="closeModal('exportModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <p style="margin-bottom:15px;">Izaberite kako želite da sačuvate ili pošaljete backup:</p>
+        <button onclick="downloadBackup()" class="btn btn-info" style="width:100%;margin-bottom:10px;">💾 Preuzmi fajl</button>
+        <button onclick="shareToGmail()" class="btn btn-danger" style="width:100%;margin-bottom:10px;">📧 Gmail</button>
+        <button onclick="shareToDrive()" class="btn btn-success" style="width:100%;margin-bottom:10px;">📗 Google Drive</button>
+        <button onclick="closeModal('exportModal')" class="btn btn-warning" style="width:100%;">Zatvori</button>
+    </div>
+</div>
+
+<script>
+// ==================== KONFIGURACIJA ====================
+const SUPABASE_URL = 'https://itoyvqqssqmeyxawvulq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_nbUWlCIXbB48NoBRhH4ucg_PfCAmau1';
+const GOOGLE_DRIVE_URL = 'OVDE_ZALEPI_SVOJ_APPS_SCRIPT_URL';
+
+let supabaseClient = null;
+try { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
+
+// ==================== PODACI ====================
+let data = {
+    cjenovnik: [],  // { naziv, grupa, jm, cijena }
+    popisi: []      // { mesec, godina, sektor, artikli: [{ naziv, jm, manjak, visak, kolicina, vrijednost }] }
+};
+let trenutniPopis = null;
+let editingArtikalIndex = null;
+
+const MESECI = ['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
+
+// ==================== SUPABASE ====================
+function updateSyncStatus(online) {
+    const dot = document.getElementById('syncDot');
+    if (dot) { dot.className = 'sync-indicator ' + (online ? 'sync-online' : 'sync-offline'); }
+}
+
+async function loadFromCloud() {
+    if (!supabaseClient) { loadLocal(); updateSyncStatus(false); return; }
+    try {
+        const { data: result, error } = await supabaseClient.from('popis_data').select('*').eq('id', 1).single();
+        if (result) { data = result.podaci || { cjenovnik: [], popisi: [] }; updateSyncStatus(true); }
+        else if (error) { await supabaseClient.from('popis_data').upsert({ id: 1, podaci: data }); updateSyncStatus(true); }
+    } catch(e) { loadLocal(); updateSyncStatus(false); }
+}
+
+async function saveToCloud() {
+    saveLocal();
+    if (!supabaseClient) return;
+    try { await supabaseClient.from('popis_data').upsert({ id: 1, podaci: data }); updateSyncStatus(true); } catch(e) { updateSyncStatus(false); }
+}
+
+function loadLocal() { const s = localStorage.getItem('popis_data'); if (s) data = JSON.parse(s); }
+function saveLocal() { localStorage.setItem('popis_data', JSON.stringify(data)); }
+
+// ==================== HELPERS ====================
+function normalize(str) {
+    return (str || '').toString().toUpperCase().trim().replace(/\s+/g, ' ');
+}
+
+function getMesecIme(index) { return MESECI[index]; }
+
+function showModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+// ==================== INIT ====================
+document.getElementById('loginBtn').onclick = async () => {
+    if (document.getElementById('passwordInput').value === '123') {
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('appContent').style.display = 'block';
+        await loadFromCloud();
+        // Popuni mesec dropdown
+        const sel = document.getElementById('noviMesec');
+        sel.innerHTML = MESECI.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+        sel.value = new Date().getMonth();
+        document.getElementById('noviGodina').value = new Date().getFullYear();
+        renderMain();
+    }
+};
+
+document.getElementById('logoutBtn').onclick = () => {
+    document.getElementById('appContent').style.display = 'none';
+    document.getElementById('loginScreen').style.display = 'flex';
+};
+
+// ==================== GLAVNI EKRAN - LISTA POPISA ====================
+function renderMain() {
+    const c = document.getElementById('mainContent');
+    if (data.popisi.length === 0) {
+        c.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Nema popisa. Kliknite "+ Novi popis" da dodate.</p>';
+        return;
+    }
+    let html = '<h2 style="margin-bottom:15px;">📋 Popisi</h2>';
+    // Sortiraj po godini i mesecu (najnoviji prvi)
+    const sorted = [...data.popisi].sort((a, b) => {
+        if (a.godina !== b.godina) return b.godina - a.godina;
+        return b.mesec - a.mesec;
+    });
+    sorted.forEach(p => {
+        let ukupnoManjak = 0;
+        p.artikli.forEach(a => { ukupnoManjak += a.vrijednost || 0; });
+        const originalIndex = data.popisi.indexOf(p);
+        html += `
+            <div class="popis-card" onclick="prikaziPopis(${originalIndex})">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                    <div>
+                        <h3 style="font-size:18px;">📅 ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}</h3>
+                        <span style="font-size:13px;color:#666;">${p.artikli.length} artikala</span>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:20px;font-weight:bold;color:#dc3545;">-${ukupnoManjak.toFixed(2)} €</div>
+                        <span style="font-size:11px;color:#666;">Ukupno manjak</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    c.innerHTML = html;
+}
+
+// ==================== NOVI POPIS ====================
+function showNoviPopis() {
+    trenutniPopis = null;
+    showModal('noviPopisModal');
+}
+
+function ucitajExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const wb = XLSX.read(e.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        
+        // Nađi header red (preskoči prazne)
+        let headerIndex = -1;
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i].map(c => (c || '').toString().toLowerCase());
+            if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('manjak'))) {
+                headerIndex = i;
+                break;
+            }
+        }
+        if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red (Naziv, Manjak, Višak)'); return; }
+        
+        const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
+        const idxNaziv = header.findIndex(h => h.includes('naziv'));
+        const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm' || h.includes('jm'));
+        const idxManjak = header.findIndex(h => h.includes('manjak'));
+        const idxVisak = header.findIndex(h => h.includes('višak') || h.includes('visak'));
+        
+        const artikli = [];
+        for (let i = headerIndex + 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || !row[idxNaziv]) continue;
+            const naziv = row[idxNaziv].toString().trim();
+            if (!naziv || naziv.toLowerCase().includes('ukupno')) continue;
+            
+            const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
+            const manjak = idxManjak >= 0 ? parseFloat((row[idxManjak] || 0).toString().replace(',', '.')) || 0 : 0;
+            const visak = idxVisak >= 0 ? parseFloat((row[idxVisak] || 0).toString().replace(',', '.')) || 0 : 0;
+            
+            // Nađi cijenu u cjenovniku
+            const cjenovnikArtikal = data.cjenovnik.find(c => normalize(c.naziv) === normalize(naziv));
+            const cijena = cjenovnikArtikal ? cjenovnikArtikal.cijena : 0;
+            const kolicina = manjak - visak;
+            const vrijednost = manjak * cijena;
+            
+            artikli.push({
+                naziv: naziv,
+                jm: jm,
+                manjak: manjak,
+                visak: visak,
+                kolicina: kolicina,
+                cijena: cijena,
+                vrijednost: vrijednost,
+                grupa: cjenovnikArtikal ? cjenovnikArtikal.grupa : ''
+            });
+        }
+        
+        if (artikli.length === 0) { alert('❌ Nema artikala u fajlu'); return; }
+        
+        trenutniPopis = { artikli: artikli };
+        alert(`✅ Učitano ${artikli.length} artikala. Klikni "Sačuvaj popis" da potvrdiš.`);
+    };
+    reader.readAsBinaryString(file);
+}
+
+async function sacuvajNoviPopis() {
+    if (!trenutniPopis || !trenutniPopis.artikli || trenutniPopis.artikli.length === 0) {
+        alert('⚠️ Učitaj Excel fajl prvo!');
+        return;
+    }
+    
+    const mesec = parseInt(document.getElementById('noviMesec').value);
+    const godina = parseInt(document.getElementById('noviGodina').value);
+    const sektor = document.getElementById('noviSektor').value;
+    
+    // Provera duplikata
+    const exists = data.popisi.find(p => p.mesec === mesec && p.godina === godina && p.sektor === sektor);
+    if (exists) {
+        if (!confirm('⚠️ Popis za taj mesec/sektor već postoji. Prepisati?')) return;
+        const idx = data.popisi.indexOf(exists);
+        data.popisi.splice(idx, 1);
+    }
+    
+    data.popisi.push({
+        mesec: mesec,
+        godina: godina,
+        sektor: sektor,
+        artikli: trenutniPopis.artikli,
+        datumKreiranja: new Date().toLocaleString('hr')
+    });
+    
+    await saveToCloud();
+    closeModal('noviPopisModal');
+    trenutniPopis = null;
+    document.getElementById('excelInput').value = '';
+    renderMain();
+    alert('✅ Popis sačuvan!');
+}
+
+// ==================== PRIKAZ POPISA ====================
+function prikaziPopis(index) {
+    const p = data.popisi[index];
+    document.getElementById('popisTitle').textContent = `📅 ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}`;
+    
+    const c = document.getElementById('popisContent');
+    let html = '<table class="artikal-table"><thead><tr>' +
+        '<th>Naziv artikla</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>CIJENA</th>' +
+        '</tr></thead><tbody>';
+    
+    let ukupnoManjak = 0;
+    p.artikli.forEach(a => {
+        ukupnoManjak += a.vrijednost || 0;
+        const kolicinaClass = a.kolicina < 0 ? 'manjak' : (a.kolicina > 0 ? 'visak' : '');
+        html += `<tr>
+            <td>${a.naziv}</td>
+            <td>${a.jm}</td>
+            <td class="manjak">${formatBroj(a.manjak)}</td>
+            <td class="visak">${formatBroj(a.visak)}</td>
+            <td class="kolicina ${kolicinaClass}">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
+            <td style="font-weight:bold;">${(a.vrijednost || 0).toFixed(2)} €</td>
+        </tr>`;
+    });
+    html += `<tr class="total-row"><td colspan="5" style="text-align:right;">UKUPNO MANJAK:</td><td>${ukupnoManjak.toFixed(2)} €</td></tr>`;
+    html += '</tbody></table>';
+    
+    c.innerHTML = html;
+    window._prikazanPopisIndex = index;
+    showModal('popisModal');
+}
+
+function formatBroj(n) {
+    if (n === 0) return '0';
+    return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 });
+}
+
+// ==================== CJENOVNIK ====================
+function showCjenovnik() {
+    renderCjenovnik();
+    showModal('cjenovnikModal');
+}
+
+function renderCjenovnik() {
+    const search = (document.getElementById('cjenovnikSearch')?.value || '').toUpperCase();
+    const c = document.getElementById('cjenovnikContent');
+    
+    let filtered = data.cjenovnik;
+    if (search) filtered = filtered.filter(a => normalize(a.naziv).includes(search));
+    
+    if (filtered.length === 0) {
+        c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema artikala. Dodajte ih ručno ili uploadujte.</p>';
+        return;
+    }
+    
+    let html = '<table class="artikal-table"><thead><tr>' +
+        '<th>Naziv</th><th>Grupa</th><th>J.M.</th><th>Cijena</th><th>Akcije</th>' +
+        '</tr></thead><tbody>';
+    filtered.forEach(a => {
+        const idx = data.cjenovnik.indexOf(a);
+        html += `<tr>
+            <td>${a.naziv}</td>
+            <td>${a.grupa || ''}</td>
+            <td>${a.jm || ''}</td>
+            <td style="font-weight:bold;">${(a.cijena || 0).toFixed(3)} €</td>
+            <td>
+                <button class="btn btn-sm btn-info" onclick="urediArtikal(${idx})">✏️</button>
+                <button class="btn btn-sm btn-danger" onclick="obrisiArtikal(${idx})">🗑</button>
+            </td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    c.innerHTML = html;
+}
+
+function showDodajArtikal() {
+    editingArtikalIndex = null;
+    document.getElementById('addArtikalTitle').textContent = 'Dodaj artikal';
+    document.getElementById('newArtikalNaziv').value = '';
+    document.getElementById('newArtikalGrupa').value = '';
+    document.getElementById('newArtikalJM').value = 'KOM.';
+    document.getElementById('newArtikalCijena').value = '';
+    showModal('addArtikalModal');
+}
+
+function urediArtikal(index) {
+    editingArtikalIndex = index;
+    const a = data.cjenovnik[index];
+    document.getElementById('addArtikalTitle').textContent = 'Uredi artikal';
+    document.getElementById('newArtikalNaziv').value = a.naziv;
+    document.getElementById('newArtikalGrupa').value = a.grupa || '';
+    document.getElementById('newArtikalJM').value = a.jm || 'KOM.';
+    document.getElementById('newArtikalCijena').value = a.cijena || '';
+    showModal('addArtikalModal');
+}
+
+async function sacuvajArtikal() {
+    const naziv = document.getElementById('newArtikalNaziv').value.trim();
+    if (!naziv) { alert('Unesite naziv!'); return; }
+    const grupa = document.getElementById('newArtikalGrupa').value.trim();
+    const jm = document.getElementById('newArtikalJM').value;
+    const cijena = parseFloat(document.getElementById('newArtikalCijena').value) || 0;
+    
+    if (editingArtikalIndex !== null) {
+        data.cjenovnik[editingArtikalIndex] = { naziv, grupa, jm, cijena };
+    } else {
+        data.cjenovnik.push({ naziv, grupa, jm, cijena });
+    }
+    
+    await saveToCloud();
+    closeModal('addArtikalModal');
+    renderCjenovnik();
+}
+
+async function obrisiArtikal(index) {
+    if (!confirm('Obrisati artikal?')) return;
+    data.cjenovnik.splice(index, 1);
+    await saveToCloud();
+    renderCjenovnik();
+}
+
+function ucitajCjenovnik(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const wb = XLSX.read(e.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        
+        let headerIndex = -1;
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i].map(c => (c || '').toString().toLowerCase());
+            if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('cijena') || c.includes('cijena'))) {
+                headerIndex = i;
+                break;
+            }
+        }
+        if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red'); return; }
+        
+        const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
+        const idxNaziv = header.findIndex(h => h.includes('naziv'));
+        const idxGrupa = header.findIndex(h => h.includes('grupa'));
+        const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
+        const idxCijena = header.findIndex(h => h.includes('cijena') || h.includes('cijena'));
+        
+        let count = 0;
+        for (let i = headerIndex + 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || !row[idxNaziv]) continue;
+            const naziv = row[idxNaziv].toString().trim();
+            if (!naziv) continue;
+            const grupa = idxGrupa >= 0 ? (row[idxGrupa] || '').toString().trim() : '';
+            const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
+            const cijena = idxCijena >= 0 ? parseFloat((row[idxCijena] || 0).toString().replace(',', '.')) || 0 : 0;
+            
+            // Provera da li već postoji
+            const existing = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv));
+            if (existing >= 0) {
+                data.cjenovnik[existing] = { naziv, grupa, jm, cijena };
+            } else {
+                data.cjenovnik.push({ naziv, grupa, jm, cijena });
+            }
+            count++;
+        }
+        
+        await saveToCloud();
+        renderCjenovnik();
+        alert(`✅ Učitano/ažurirano ${count} artikala`);
+    };
+    reader.readAsBinaryString(file);
+}
+
+// ==================== MENADŽER ====================
+function showManager() {
+    document.getElementById('managerGodina').value = new Date().getFullYear();
+    renderManager();
+    showModal('managerModal');
+}
+
+function renderManager() {
+    const godina = parseInt(document.getElementById('managerGodina').value);
+    const sektor = document.getElementById('managerSektor').value;
+    const c = document.getElementById('managerContent');
+    
+    // Filtriraj popise
+    const popisi = data.popisi.filter(p => p.godina === godina && p.sektor === sektor)
+        .sort((a, b) => a.mesec - b.mesec);
+    
+    if (popisi.length === 0) {
+        c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema popisa za ovaj sektor/godinu.</p>';
+        return;
+    }
+    
+    // Skupi sve artikle iz svih popisa
+    const artikliSet = new Set();
+    popisi.forEach(p => p.artikli.forEach(a => artikliSet.add(a.naziv)));
+    const artikli = Array.from(artikliSet).sort();
+    
+    // Header sa mesecima
+    let html = '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr>';
+    html += '<th style="min-width:200px;">Artikal</th>';
+    popisi.forEach(p => {
+        html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>Manjak €</small></th>`;
+    });
+    html += '<th>UKUPNO</th></tr></thead><tbody>';
+    
+    // Sumarno po artiklu
+    const totalPoMjesecu = {};
+    artikli.forEach(naziv => {
+        html += `<tr><td style="font-weight:bold;">${naziv}</td>`;
+        let ukupnoArtikal = 0;
+        popisi.forEach(p => {
+            const a = p.artikli.find(x => x.naziv === naziv);
+            const vrijednost = a ? (a.vrijednost || 0) : 0;
+            ukupnoArtikal += vrijednost;
+            if (!totalPoMjesecu[p.mesec]) totalPoMjesecu[p.mesec] = 0;
+            totalPoMjesecu[p.mesec] += vrijednost;
+            html += `<td style="color:#dc3545;">${vrijednost > 0 ? vrijednost.toFixed(2) : '-'}</td>`;
+        });
+        html += `<td style="font-weight:bold;background:#fff3cd;">${ukupnoArtikal.toFixed(2)} €</td></tr>`;
+    });
+    
+    // Ukupno po mesecima
+    html += `<tr class="total-row"><td>UKUPNO:</td>`;
+    let grand = 0;
+    popisi.forEach(p => {
+        const t = totalPoMjesecu[p.mesec] || 0;
+        grand += t;
+        html += `<td>${t.toFixed(2)} €</td>`;
+    });
+    html += `<td>${grand.toFixed(2)} €</td></tr>`;
+    
+    html += '</tbody></table></div>';
+    c.innerHTML = html;
+}
+
+// ==================== ŠTAMPANJE ====================
+function stampajPopis() {
+    const index = window._prikazanPopisIndex;
+    if (index === undefined) return;
+    const p = data.popisi[index];
+    
+    let printContent = `<h2 style="text-align:center;">${MESECI[p.mesec].toUpperCase()} ${p.godina} - MANJAK ${p.sektor}</h2>`;
+    printContent += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:15px;">';
+    printContent += '<tr style="background:#f0f0f0;"><th style="border:1px solid #000;padding:6px;text-align:left;">Naziv artikla</th><th style="border:1px solid #000;padding:6px;">J.M.</th><th style="border:1px solid #000;padding:6px;">Manjak</th><th style="border:1px solid #000;padding:6px;">Višak</th><th style="border:1px solid #000;padding:6px;">Konačno</th><th style="border:1px solid #000;padding:6px;">CIJENA</th></tr>';
+    
+    let ukupno = 0;
+    p.artikli.forEach(a => {
+        ukupno += a.vrijednost || 0;
+        printContent += `<tr>
+            <td style="border:1px solid #000;padding:4px;">${a.naziv}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:center;">${a.jm}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;">${formatBroj(a.manjak)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;">${formatBroj(a.visak)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${(a.vrijednost || 0).toFixed(2)}</td>
+        </tr>`;
+    });
+    printContent += `<tr style="background:#fff3cd;font-weight:bold;"><td colspan="5" style="border:1px solid #000;padding:6px;text-align:right;">UKUPNO MANJAK:</td><td style="border:1px solid #000;padding:6px;text-align:right;">${ukupno.toFixed(2)} €</td></tr>`;
+    printContent += '</table>';
+    
+    const win = window.open('', '_blank');
+    win.document.write(`<html><head><title>Popis - ${MESECI[p.mesec]} ${p.godina}</title><style>body{font-family:Arial,sans-serif;padding:15px;}</style></head><body>${printContent}</body></html>`);
+    win.document.close();
+    win.print();
+}
+
+function stampajManager() {
+    const c = document.getElementById('managerContent');
+    const win = window.open('', '_blank');
+    win.document.write(`<html><head><title>Menadžer izveštaj</title><style>body{font-family:Arial,sans-serif;padding:15px;font-size:11px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #000;padding:4px;}</style></head><body><h2>Menadžer - Sumarni pregled</h2>${c.innerHTML}</body></html>`);
+    win.document.close();
+    win.print();
+}
+
+// ==================== EXPORT / IMPORT ====================
+function exportData() { showModal('exportModal'); }
+
+function downloadBackup() {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `popis_backup_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function shareToGmail() {
+    downloadBackup();
+    setTimeout(() => { window.location.href = 'https://mail.google.com/mail/?view=cm&fs=1&tf=1&su=Popis Backup'; }, 1000);
+    alert('📧 Gmail:\n\n1. Sačekajte da se otvori Gmail\n2. Prikačite preuzeti fajl\n3. Pošaljite poruku');
+}
+
+function shareToDrive() {
+    downloadBackup();
+    setTimeout(() => { window.location.href = 'https://drive.google.com/drive/my-drive'; }, 1000);
+    alert('📗 Google Drive:\n\n1. Sačekajte da se otvori Drive\n2. Kliknite "+ Novo"\n3. Izaberite "File upload"\n4. Odaberite preuzeti fajl');
+}
+
+function importData() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json,application/json';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const imported = JSON.parse(event.target.result);
+                if (imported && (imported.cjenovnik || imported.popisi)) {
+                    if (confirm('⚠️ Uvoz će PREBRIŠATI trenutne podatke. Nastaviti?')) {
+                        data = imported;
+                        await saveToCloud();
+                        renderMain();
+                        alert('✅ Podaci uspešno uvezeni!');
+                    }
+                } else { alert('❌ Neispravan backup fajl!'); }
+            } catch (e) { alert('❌ Greška: ' + e.message); }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+// ==================== RESET ====================
+async function resetAll() {
+    const sifra = prompt('🔒 Unesite šifru za reset:');
+    if (sifra === '1978') {
+        if (confirm('⚠️ Resetovati SVE podatke?')) {
+            localStorage.removeItem('popis_data');
+            data = { cjenovnik: [], popisi: [] };
+            await saveToCloud();
+            renderMain();
+            alert('✅ Resetovano!');
+        }
+    } else if (sifra !== null) { alert('❌ Pogrešna šifra!'); }
+}
+
+// ==================== CLOSE MODAL ON OUTSIDE CLICK ====================
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) event.target.classList.remove('active');
+};
+</script>
+</body>
+</html>
