@@ -52,6 +52,7 @@
         .artikal-table .kolicina { font-weight: bold; }
         .artikal-table tr:hover { background: #f9f9f9; }
         .artikal-table .total-row { background: #fff3cd; font-weight: bold; font-size: 15px; }
+        .artikal-table .nema-cijene { background: #ffe5e5; }
         .cijena-edit { cursor: pointer; border-bottom: 1px dashed #667eea; }
         .cijena-edit:hover { background: #eef2ff; }
 
@@ -280,15 +281,22 @@ function saveLocal() { localStorage.setItem('popis_data', JSON.stringify(data));
 
 // ==================== HELPERS ====================
 function normalize(str) {
-    return (str || '').toString().toUpperCase().trim().replace(/\s+/g, ' ');
+    if (!str) return '';
+    return str
+        .toString()
+        .toUpperCase()
+        .trim()
+        .replace(/\([^)]*\)/g, '')  // ukloni (razduzenje ambalaze)
+        .replace(/\[[^\]]*\]/g, '')  // ukloni [...]
+        .replace(/\/S.*$/g, '')      // ukloni /S i sve posle
+        .replace(/\s+/g, ' ')
+        .replace(/[-_]/g, ' ')
+        .replace(/\s/g, '')          // ukloni sve razmake
+        .replace(/[.,]/g, '')
+        .trim();
 }
 
-function formatBroj(n) {
-    if (n === 0 || n === undefined || n === null) return '0';
-    return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 });
-}
-
-// Sigurno parsiranje brojeva
+// SIGURNO PARSIRANJE BROJEVA
 function parseBroj(val) {
     if (val === null || val === undefined) return 0;
     let str = val.toString().trim();
@@ -304,10 +312,56 @@ function parseBroj(val) {
     return isNaN(num) ? 0 : num;
 }
 
-// Sigurno pretvaranje u string
 function toStr(val) {
     if (val === null || val === undefined) return '';
     return val.toString();
+}
+
+function formatBroj(n) {
+    if (n === 0 || n === undefined || n === null) return '0';
+    return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 });
+}
+
+// ** PAMETNO TRAŽENJE CIJENE U CJENOVNIKU **
+function nadjiCijenu(naziv) {
+    if (!naziv) return null;
+    
+    const norm = normalize(naziv);
+    if (!norm) return null;
+    
+    // 1. Tačno poklapanje (posle normalizacije)
+    let found = data.cjenovnik.find(c => normalize(c.naziv) === norm);
+    if (found) return found;
+    
+    // 2. Poklapanje po prvih 8 karaktera
+    found = data.cjenovnik.find(c => {
+        const cn = normalize(c.naziv);
+        if (cn.length < 6 || norm.length < 6) return false;
+        return cn.substring(0, 8) === norm.substring(0, 8);
+    });
+    if (found) return found;
+    
+    // 3. Poklapanje po prvih 5 karaktera + istom broju
+    const normBroj = norm.match(/\d+/);
+    if (normBroj) {
+        found = data.cjenovnik.find(c => {
+            const cn = normalize(c.naziv);
+            const cnBroj = cn.match(/\d+/);
+            if (!cnBroj) return false;
+            // Prvih 5 slova mora da se poklopi I broj
+            return cn.substring(0, 5) === norm.substring(0, 5) && cnBroj[0] === normBroj[0];
+        });
+        if (found) return found;
+    }
+    
+    // 4. Poklapanje po prvih 4 karaktera (labavije)
+    found = data.cjenovnik.find(c => {
+        const cn = normalize(c.naziv);
+        if (cn.length < 4 || norm.length < 4) return false;
+        return cn.substring(0, 4) === norm.substring(0, 4);
+    });
+    
+    return found || null;
 }
 
 function showModal(id) { document.getElementById(id).classList.add('active'); }
@@ -389,24 +443,21 @@ function ucitajExcel(event) {
             let headerIndex = -1;
             for (let i = 0; i < rows.length; i++) {
                 const row = (rows[i] || []).map(c => toStr(c).toLowerCase());
-                const hasNaziv = row.some(c => c.includes('naziv'));
-                const hasManjak = row.some(c => c.includes('manjak'));
-                if (hasNaziv && hasManjak) {
+                if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('manjak'))) {
                     headerIndex = i;
                     break;
                 }
             }
-            if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red (Naziv, Manjak, Višak)'); return; }
+            if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red'); return; }
             
             const header = rows[headerIndex].map(c => toStr(c).toLowerCase().trim());
             const idxNaziv = header.findIndex(h => h.includes('naziv'));
-            const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm' || h.includes('jm'));
+            const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
             const idxManjak = header.findIndex(h => h.includes('manjak'));
             const idxVisak = header.findIndex(h => h.includes('višak') || h.includes('visak'));
             
-            console.log('📊 Header:', header, { idxNaziv, idxJM, idxManjak, idxVisak });
-            
             const artikli = [];
+            let bezCijene = 0;
             for (let i = headerIndex + 1; i < rows.length; i++) {
                 const row = rows[i];
                 if (!row || !row[idxNaziv]) continue;
@@ -417,8 +468,11 @@ function ucitajExcel(event) {
                 const manjak = idxManjak >= 0 ? parseBroj(row[idxManjak]) : 0;
                 const visak = idxVisak >= 0 ? parseBroj(row[idxVisak]) : 0;
                 
-                const cjenovnikArtikal = data.cjenovnik.find(c => normalize(c.naziv) === normalize(naziv));
+                // ** PAMETNO traženje cijene **
+                const cjenovnikArtikal = nadjiCijenu(naziv);
                 const cijena = cjenovnikArtikal ? cjenovnikArtikal.cijena : 0;
+                if (!cjenovnikArtikal) bezCijene++;
+                
                 const kolicina = visak - manjak;
                 const vrijednost = manjak * cijena;
                 
@@ -439,24 +493,37 @@ function ucitajExcel(event) {
             trenutniPopis = { artikli: artikli };
             
             let preview = `<div style="background:#e8f5e9;padding:10px;border-radius:5px;margin-bottom:10px;">
-                <strong>✅ Učitano ${artikli.length} artikala</strong>
-            </div>`;
+                <strong>✅ Učitano ${artikli.length} artikala</strong>`;
+            if (bezCijene > 0) {
+                preview += `<br><span style="color:#dc3545;">⚠️ ${bezCijene} artikala bez cijene u cjenovniku</span>`;
+            }
+            preview += `</div>`;
+            
             preview += '<table class="artikal-table" style="font-size:12px;"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena</th><th>Vrijednost</th></tr></thead><tbody>';
             let ukupno = 0;
             artikli.forEach(a => {
                 ukupno += a.vrijednost;
-                preview += `<tr>
+                const nemaCij = a.cijena === 0;
+                preview += `<tr class="${nemaCij ? 'nema-cijene' : ''}">
                     <td>${a.naziv}</td>
                     <td>${a.jm}</td>
                     <td style="color:#dc3545;">${formatBroj(a.manjak)}</td>
                     <td style="color:#28a745;">${formatBroj(a.visak)}</td>
                     <td style="font-weight:bold;">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
-                    <td>${a.cijena.toFixed(3)}</td>
+                    <td>${nemaCij ? '❌ nema' : a.cijena.toFixed(3)}</td>
                     <td style="font-weight:bold;">${a.vrijednost.toFixed(2)} €</td>
                 </tr>`;
             });
             preview += `<tr class="total-row"><td colspan="6" style="text-align:right;">UKUPNO MANJAK:</td><td>${ukupno.toFixed(2)} €</td></tr>`;
             preview += '</tbody></table>';
+            
+            if (bezCijene > 0) {
+                preview += `<div style="background:#fff3cd;padding:10px;border-radius:5px;margin-top:10px;">
+                    <strong>⚠️ ${bezCijene} artikala nema cijenu u cjenovniku.</strong><br>
+                    <small>Dodaj ih ručno u 📋 Cjenovnik ili provjeri nazive.</small>
+                </div>`;
+            }
+            
             document.getElementById('previewNovi').innerHTML = preview;
         } catch (err) {
             console.error('Greška:', err);
@@ -551,7 +618,7 @@ function renderCjenovnik() {
     const c = document.getElementById('cjenovnikContent');
     
     let filtered = data.cjenovnik;
-    if (search) filtered = filtered.filter(a => normalize(a.naziv).includes(search));
+    if (search) filtered = filtered.filter(a => normalize(a.naziv).includes(normalize(search)));
     
     if (filtered.length === 0) {
         c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema artikala. Dodajte ih ručno ili uploadujte Excel.</p>';
@@ -643,40 +710,25 @@ function ucitajCjenovnik(event) {
             const ws = wb.Sheets[wb.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
             
-            console.log('📊 Cjenovnik - učitano redova:', rows.length);
-            console.log('📊 Prvi red:', rows[0]);
-            console.log('📊 Drugi red:', rows[1]);
-            
             let headerIndex = -1;
             for (let i = 0; i < rows.length; i++) {
                 const row = (rows[i] || []).map(c => toStr(c).toLowerCase());
-                const hasNaziv = row.some(c => c.includes('naziv'));
-                const hasCijena = row.some(c => c.includes('cijena'));
-                if (hasNaziv && hasCijena) {
+                if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('cijena'))) {
                     headerIndex = i;
                     break;
                 }
             }
             
             if (headerIndex === -1) { 
-                alert('❌ Ne mogu da nađem header red (Naziv, Cijena).\n\nProvjeri da li Excel ima kolone "Naziv" i "Cijena".');
+                alert('❌ Ne mogu da nađem header (Naziv, Cijena).');
                 return; 
             }
             
             const header = rows[headerIndex].map(c => toStr(c).toLowerCase().trim());
-            console.log('📊 Header:', header);
-            
             const idxNaziv = header.findIndex(h => h.includes('naziv'));
             const idxGrupa = header.findIndex(h => h.includes('grupa'));
-            const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm' || h.includes('jm'));
+            const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
             const idxCijena = header.findIndex(h => h.includes('cijena'));
-            
-            console.log('📊 Indexi:', { idxNaziv, idxGrupa, idxJM, idxCijena });
-            
-            if (idxNaziv === -1) {
-                alert('❌ Ne mogu da nađem kolonu "Naziv"');
-                return;
-            }
             
             let count = 0;
             for (let i = headerIndex + 1; i < rows.length; i++) {
@@ -711,7 +763,7 @@ function ucitajCjenovnik(event) {
             alert(`✅ Učitano/ažurirano ${count} artikala`);
         } catch (err) {
             console.error('Greška:', err);
-            alert('❌ Greška pri čitanju fajla: ' + err.message);
+            alert('❌ Greška: ' + err.message);
         }
     };
     reader.readAsBinaryString(file);
