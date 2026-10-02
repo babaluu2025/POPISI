@@ -245,8 +245,8 @@ try { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 
 // ==================== PODACI ====================
 let data = {
-    cjenovnik: [],  // { naziv, grupa, jm, cijena }
-    popisi: []      // { mesec, godina, sektor, artikli: [{ naziv, jm, manjak, visak, kolicina, cijena, vrijednost }] }
+    cjenovnik: [],
+    popisi: []
 };
 let trenutniPopis = null;
 let editingArtikalIndex = null;
@@ -286,6 +286,23 @@ function normalize(str) {
 function formatBroj(n) {
     if (n === 0 || n === undefined || n === null) return '0';
     return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 });
+}
+
+// ** SIGURNO PARSIRANJE BROJEVA - otporno na €, -, +, zareze **
+function parseBroj(val) {
+    if (val === null || val === undefined) return 0;
+    let str = val.toString().trim();
+    str = str.replace(/[€%\s]/g, '');
+    str = str.replace(/[−–—]/g, '-');
+    str = str.replace(/^\+/, '');
+    // Ako ima i tačku i zarez, pretpostavi da je tačka hiljada separator
+    if (str.includes('.') && str.includes(',')) {
+        str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+        str = str.replace(',', '.');
+    }
+    const num = parseFloat(str);
+    return isNaN(num) ? 0 : num;
 }
 
 function showModal(id) { document.getElementById(id).classList.add('active'); }
@@ -357,81 +374,86 @@ function ucitajExcel(event) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-        const wb = XLSX.read(e.target.result, { type: 'binary' });
-        // Uzmi prvi list
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        
-        let headerIndex = -1;
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i].map(c => (c || '').toString().toLowerCase());
-            if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('manjak'))) {
-                headerIndex = i;
-                break;
+        try {
+            const wb = XLSX.read(e.target.result, { type: 'binary' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+            
+            console.log('📊 Učitano redova:', rows.length);
+            
+            let headerIndex = -1;
+            for (let i = 0; i < rows.length; i++) {
+                const row = (rows[i] || []).map(c => (c || '').toString().toLowerCase());
+                if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('manjak'))) {
+                    headerIndex = i;
+                    break;
+                }
             }
-        }
-        if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red (Naziv, Manjak, Višak)'); return; }
-        
-        const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
-        const idxNaziv = header.findIndex(h => h.includes('naziv'));
-        const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
-        const idxManjak = header.findIndex(h => h.includes('manjak'));
-        const idxVisak = header.findIndex(h => h.includes('višak') || h.includes('visak'));
-        
-        const artikli = [];
-        for (let i = headerIndex + 1; i < rows.length; i++) {
-            const row = rows[i];
-            if (!row || !row[idxNaziv]) continue;
-            const naziv = row[idxNaziv].toString().trim();
-            if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
+            if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red (Naziv, Manjak, Višak)'); return; }
             
-            const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
-            const manjak = idxManjak >= 0 ? parseFloat((row[idxManjak] || 0).toString().replace(',', '.')) || 0 : 0;
-            const visak = idxVisak >= 0 ? parseFloat((row[idxVisak] || 0).toString().replace(',', '.')) || 0 : 0;
+            const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
+            const idxNaziv = header.findIndex(h => h.includes('naziv'));
+            const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm' || h.includes('jm'));
+            const idxManjak = header.findIndex(h => h.includes('manjak'));
+            const idxVisak = header.findIndex(h => h.includes('višak') || h.includes('visak'));
             
-            // ** Cijena se vuče iz cjenovnika **
-            const cjenovnikArtikal = data.cjenovnik.find(c => normalize(c.naziv) === normalize(naziv));
-            const cijena = cjenovnikArtikal ? cjenovnikArtikal.cijena : 0;
-            const kolicina = visak - manjak;  // ISPRAVLJENO: visak - manjak
-            const vrijednost = manjak * cijena;  // Manjak × cijena
+            const artikli = [];
+            for (let i = headerIndex + 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || !row[idxNaziv]) continue;
+                const naziv = row[idxNaziv].toString().trim();
+                if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
+                
+                const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
+                const manjak = idxManjak >= 0 ? parseBroj(row[idxManjak]) : 0;
+                const visak = idxVisak >= 0 ? parseBroj(row[idxVisak]) : 0;
+                
+                // ** Cijena se vuče iz cjenovnika **
+                const cjenovnikArtikal = data.cjenovnik.find(c => normalize(c.naziv) === normalize(naziv));
+                const cijena = cjenovnikArtikal ? cjenovnikArtikal.cijena : 0;
+                const kolicina = visak - manjak;
+                const vrijednost = manjak * cijena;
+                
+                artikli.push({
+                    naziv: naziv,
+                    jm: jm,
+                    manjak: manjak,
+                    visak: visak,
+                    kolicina: kolicina,
+                    cijena: cijena,
+                    vrijednost: vrijednost,
+                    grupa: cjenovnikArtikal ? cjenovnikArtikal.grupa : ''
+                });
+            }
             
-            artikli.push({
-                naziv: naziv,
-                jm: jm,
-                manjak: manjak,
-                visak: visak,
-                kolicina: kolicina,
-                cijena: cijena,
-                vrijednost: vrijednost,
-                grupa: cjenovnikArtikal ? cjenovnikArtikal.grupa : ''
+            if (artikli.length === 0) { alert('❌ Nema artikala u fajlu'); return; }
+            
+            trenutniPopis = { artikli: artikli };
+            
+            let preview = `<div style="background:#e8f5e9;padding:10px;border-radius:5px;margin-bottom:10px;">
+                <strong>✅ Učitano ${artikli.length} artikala</strong>
+            </div>`;
+            preview += '<table class="artikal-table" style="font-size:12px;"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena</th><th>Vrijednost</th></tr></thead><tbody>';
+            let ukupno = 0;
+            artikli.forEach(a => {
+                ukupno += a.vrijednost;
+                preview += `<tr>
+                    <td>${a.naziv}</td>
+                    <td>${a.jm}</td>
+                    <td style="color:#dc3545;">${formatBroj(a.manjak)}</td>
+                    <td style="color:#28a745;">${formatBroj(a.visak)}</td>
+                    <td style="font-weight:bold;">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
+                    <td>${a.cijena.toFixed(3)}</td>
+                    <td style="font-weight:bold;">${a.vrijednost.toFixed(2)} €</td>
+                </tr>`;
             });
+            preview += `<tr class="total-row"><td colspan="6" style="text-align:right;">UKUPNO MANJAK:</td><td>${ukupno.toFixed(2)} €</td></tr>`;
+            preview += '</tbody></table>';
+            document.getElementById('previewNovi').innerHTML = preview;
+        } catch (err) {
+            console.error('Greška:', err);
+            alert('❌ Greška pri čitanju fajla: ' + err.message);
         }
-        
-        if (artikli.length === 0) { alert('❌ Nema artikala u fajlu'); return; }
-        
-        trenutniPopis = { artikli: artikli };
-        
-        // Preview
-        let preview = `<div style="background:#e8f5e9;padding:10px;border-radius:5px;margin-bottom:10px;">
-            <strong>✅ Učitano ${artikli.length} artikala</strong>
-        </div>`;
-        preview += '<table class="artikal-table" style="font-size:12px;"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena</th><th>Vrijednost</th></tr></thead><tbody>';
-        let ukupno = 0;
-        artikli.forEach(a => {
-            ukupno += a.vrijednost;
-            preview += `<tr>
-                <td>${a.naziv}</td>
-                <td>${a.jm}</td>
-                <td style="color:#dc3545;">${formatBroj(a.manjak)}</td>
-                <td style="color:#28a745;">${formatBroj(a.visak)}</td>
-                <td style="font-weight:bold;">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
-                <td>${a.cijena.toFixed(3)}</td>
-                <td style="font-weight:bold;">${a.vrijednost.toFixed(2)} €</td>
-            </tr>`;
-        });
-        preview += `<tr class="total-row"><td colspan="6" style="text-align:right;">UKUPNO MANJAK:</td><td>${ukupno.toFixed(2)} €</td></tr>`;
-        preview += '</tbody></table>';
-        document.getElementById('previewNovi').innerHTML = preview;
     };
     reader.readAsBinaryString(file);
 }
@@ -582,7 +604,6 @@ async function sacuvajArtikal() {
     if (editingArtikalIndex !== null) {
         data.cjenovnik[editingArtikalIndex] = { naziv, grupa, jm, cijena };
     } else {
-        // Provera duplikata
         const existing = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv));
         if (existing >= 0) {
             if (!confirm('⚠️ Artikal sa tim nazivom već postoji. Prepisati?')) return;
@@ -609,58 +630,71 @@ function ucitajCjenovnik(event) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (e) => {
-        const wb = XLSX.read(e.target.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        
-        let headerIndex = -1;
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i].map(c => (c || '').toString().toLowerCase());
-            if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('cijena'))) {
-                headerIndex = i;
-                break;
-            }
-        }
-        if (headerIndex === -1) { alert('❌ Ne mogu da nađem header red (Naziv, Cijena)'); return; }
-        
-        const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
-        const idxNaziv = header.findIndex(h => h.includes('naziv'));
-        const idxGrupa = header.findIndex(h => h.includes('grupa'));
-        const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
-        const idxCijena = header.findIndex(h => h.includes('cijena') || h.includes('cijena') || h.includes('rabat'));
-        
-        let count = 0;
-        for (let i = headerIndex + 1; i < rows.length; i++) {
-            const row = rows[i];
-            if (!row || !row[idxNaziv]) continue;
-            const naziv = row[idxNaziv].toString().trim();
-            if (!naziv) continue;
-            const grupa = idxGrupa >= 0 ? (row[idxGrupa] || '').toString().trim() : '';
-            const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
-            // Uzmi zadnju kolonu kao cijenu (sa rabatom)
-            let cijena = 0;
-            if (idxCijena >= 0) {
-                cijena = parseFloat((row[idxCijena] || 0).toString().replace(',', '.')) || 0;
-            } else {
-                // Ako nema headera, uzmi zadnju numeričku kolonu
-                for (let j = row.length - 1; j >= 0; j--) {
-                    const val = parseFloat((row[j] || '').toString().replace(',', '.'));
-                    if (!isNaN(val) && val > 0 && val < 10000) { cijena = val; break; }
+        try {
+            const wb = XLSX.read(e.target.result, { type: 'binary' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+            
+            console.log('📊 Cjenovnik - učitano redova:', rows.length);
+            console.log('📊 Prvi red:', rows[0]);
+            
+            let headerIndex = -1;
+            for (let i = 0; i < rows.length; i++) {
+                const row = (rows[i] || []).map(c => (c || '').toString().toLowerCase());
+                if (row.some(c => c.includes('naziv')) && (row.some(c => c.includes('cijena')) || row.some(c => c.includes('cijena')))) {
+                    headerIndex = i;
+                    break;
                 }
             }
-            
-            const existing = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv));
-            if (existing >= 0) {
-                data.cjenovnik[existing] = { naziv, grupa, jm, cijena };
-            } else {
-                data.cjenovnik.push({ naziv, grupa, jm, cijena });
+            if (headerIndex === -1) { 
+                alert('❌ Ne mogu da nađem header red (Naziv, Cijena). Provjeri da li Excel ima kolone "Naziv" i "Cijena".');
+                return; 
             }
-            count++;
+            
+            const header = rows[headerIndex].map(c => (c || '').toString().toLowerCase().trim());
+            console.log('📊 Header:', header);
+            
+            const idxNaziv = header.findIndex(h => h.includes('naziv'));
+            const idxGrupa = header.findIndex(h => h.includes('grupa'));
+            const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm' || h.includes('jm'));
+            const idxCijena = header.findIndex(h => h.includes('cijena') || h.includes('cijena') || h.includes('rabat'));
+            
+            console.log('📊 Indexi:', { idxNaziv, idxGrupa, idxJM, idxCijena });
+            
+            let count = 0;
+            for (let i = headerIndex + 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || !row[idxNaziv]) continue;
+                const naziv = row[idxNaziv].toString().trim();
+                if (!naziv) continue;
+                const grupa = idxGrupa >= 0 ? (row[idxGrupa] || '').toString().trim() : '';
+                const jm = idxJM >= 0 ? (row[idxJM] || '').toString().trim() : '';
+                let cijena = 0;
+                if (idxCijena >= 0) {
+                    cijena = parseBroj(row[idxCijena]);
+                } else {
+                    for (let j = row.length - 1; j >= 0; j--) {
+                        const val = parseBroj(row[j]);
+                        if (val > 0 && val < 100000) { cijena = val; break; }
+                    }
+                }
+                
+                const existing = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv));
+                if (existing >= 0) {
+                    data.cjenovnik[existing] = { naziv, grupa, jm, cijena };
+                } else {
+                    data.cjenovnik.push({ naziv, grupa, jm, cijena });
+                }
+                count++;
+            }
+            
+            await saveToCloud();
+            renderCjenovnik();
+            alert(`✅ Učitano/ažurirano ${count} artikala`);
+        } catch (err) {
+            console.error('Greška:', err);
+            alert('❌ Greška pri čitanju fajla: ' + err.message);
         }
-        
-        await saveToCloud();
-        renderCjenovnik();
-        alert(`✅ Učitano/ažurirano ${count} artikala`);
     };
     reader.readAsBinaryString(file);
 }
