@@ -144,7 +144,7 @@
         <div class="upload-area" onclick="document.getElementById('excelInput').click()">
             <div style="font-size:40px;">📂</div>
             <div style="margin-top:10px;font-weight:bold;">Klikni da učitaš Excel/CSV</div>
-            <div style="font-size:12px;color:#666;margin-top:5px;">Kolone: Naziv, J.M., Manjak, Višak</div>
+            <div style="font-size:12px;color:#666;margin-top:5px;">Kolone: Naziv, J.M., Manjak, Višak (opciono Cijena)</div>
         </div>
         <input type="file" id="excelInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajExcel(event)">
         <div id="previewNovi" style="margin-top:15px;"></div>
@@ -303,7 +303,10 @@ function parseBroj(val) {
 }
 
 function toStr(val) { return (val === null || val === undefined) ? '' : val.toString(); }
-function formatBroj(n) { if (n === 0 || !n) return '0'; return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 }); }
+function formatBroj(n) { 
+    if (n === 0 || !n) return '0'; 
+    return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 }); 
+}
 
 function nadjiCijenu(naziv) {
     if (!naziv) return null;
@@ -374,6 +377,7 @@ function renderMain() {
         let ukupnoManjak = 0;
         (p.artikli || []).forEach(a => { ukupnoManjak += a.vrijednost || 0; });
         const originalIndex = data.popisi.indexOf(p);
+        const boja = ukupnoManjak < 0 ? '#dc3545' : '#28a745';
         html += `
             <div class="popis-card" onclick="prikaziPopis(${originalIndex})">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
@@ -382,8 +386,8 @@ function renderMain() {
                         <span style="font-size:13px;color:#666;">${(p.artikli || []).length} artikala</span>
                     </div>
                     <div style="text-align:right;">
-                        <div style="font-size:20px;font-weight:bold;color:#dc3545;">${ukupnoManjak.toFixed(2)} €</div>
-                        <span style="font-size:11px;color:#666;">Ukupno manjak</span>
+                        <div style="font-size:20px;font-weight:bold;color:${boja};">${ukupnoManjak.toFixed(2)} €</div>
+                        <span style="font-size:11px;color:#666;">Neto manjak</span>
                     </div>
                 </div>
             </div>`;
@@ -424,6 +428,7 @@ function ucitajExcel(event) {
             const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
             const idxManjak = header.findIndex(h => h.includes('manjak'));
             const idxVisak = header.findIndex(h => h.includes('višak') || h.includes('visak'));
+            const idxCijena = header.findIndex(h => h.includes('cijena'));
             
             const artikli = [];
             for (let i = headerIndex + 1; i < rows.length; i++) {
@@ -436,15 +441,28 @@ function ucitajExcel(event) {
                 const manjak = idxManjak >= 0 ? parseBroj(row[idxManjak]) : 0;
                 const visak = idxVisak >= 0 ? parseBroj(row[idxVisak]) : 0;
                 
-                const cjenovnikArtikal = nadjiCijenu(naziv);
-                const cijena = cjenovnikArtikal ? cjenovnikArtikal.cijena : 0;
-                const kolicina = visak - manjak;
-                const vrijednost = manjak * cijena;
+                // Konačno = Manjak - Višak (sa predznakom)
+                const kolicina = manjak - visak;
+                
+                // Cijena: prvo iz Excela, pa iz cjenovnika
+                let cijena = 0;
+                let pronadjena = false;
+                if (idxCijena >= 0 && row[idxCijena]) {
+                    cijena = parseBroj(row[idxCijena]);
+                    pronadjena = cijena > 0;
+                }
+                if (cijena === 0) {
+                    const cj = nadjiCijenu(naziv);
+                    if (cj) { cijena = cj.cijena; pronadjena = true; }
+                }
+                
+                // ** VRIJEDNOST = KONAČNO × CIJENA **
+                const vrijednost = kolicina * cijena;
                 
                 artikli.push({
                     naziv, jm, manjak, visak, kolicina, cijena, vrijednost,
-                    grupa: cjenovnikArtikal ? cjenovnikArtikal.grupa : '',
-                    pronadjena: !!cjenovnikArtikal
+                    grupa: '',
+                    pronadjena
                 });
             }
             
@@ -474,7 +492,7 @@ function renderPreviewNovi() {
     }
     if (saCijenom > 0) {
         html += `<div class="info-box info-success">
-            <strong>✅ ${saCijenom} artikala ima cijenu</strong> – automatski popunjeno iz cjenovnika
+            <strong>✅ ${saCijenom} artikala ima cijenu</strong>
         </div>`;
     }
     
@@ -484,8 +502,13 @@ function renderPreviewNovi() {
     
     let ukupno = 0;
     artikli.forEach((a, idx) => {
+        // ** UVEK preračunaj: Vrijednost = Konačno × Cijena **
+        a.vrijednost = a.kolicina * a.cijena;
         ukupno += a.vrijednost;
+        
         const redClass = a.pronadjena ? '' : 'red-bez-cijene';
+        const bojaVrijednost = a.vrijednost < 0 ? '#dc3545' : (a.vrijednost > 0 ? '#28a745' : '#666');
+        
         html += `<tr class="${redClass}">
             <td>${a.naziv}</td>
             <td>${a.jm}</td>
@@ -503,11 +526,12 @@ function renderPreviewNovi() {
         }
         
         html += `</td>
-            <td style="font-weight:bold;">${a.vrijednost.toFixed(2)}</td>
+            <td style="font-weight:bold;color:${bojaVrijednost};">${a.vrijednost.toFixed(2)}</td>
         </tr>`;
     });
     
-    html += `<tr class="total-row"><td colspan="6" style="text-align:right;">UKUPNO MANJAK:</td><td>${ukupno.toFixed(2)} €</td></tr>`;
+    const bojaUkupno = ukupno < 0 ? '#dc3545' : '#28a745';
+    html += `<tr class="total-row"><td colspan="6" style="text-align:right;">UKUPNO (Neto manjak):</td><td style="color:${bojaUkupno};">${ukupno.toFixed(2)} €</td></tr>`;
     html += '</tbody></table>';
     
     document.getElementById('previewNovi').innerHTML = html;
@@ -516,7 +540,9 @@ function renderPreviewNovi() {
 function azurirajCijenuNovi(index, vrijednost) {
     const cijena = parseFloat(vrijednost) || 0;
     trenutniPopis.artikli[index].cijena = cijena;
-    trenutniPopis.artikli[index].vrijednost = trenutniPopis.artikli[index].manjak * cijena;
+    // ** VRIJEDNOST = KONAČNO × CIJENA **
+    trenutniPopis.artikli[index].vrijednost = trenutniPopis.artikli[index].kolicina * cijena;
+    trenutniPopis.artikli[index].pronadjena = cijena > 0;
     renderPreviewNovi();
 }
 
@@ -524,7 +550,10 @@ async function sacuvajCijeneICjenovnik() {
     if (!trenutniPopis) return;
     
     const bezCijene = trenutniPopis.artikli.filter(a => a.cijena > 0 && !a.pronadjena);
-    if (bezCijene.length === 0) { alert('Nema novih cijena za čuvanje.'); return; }
+    if (bezCijene.length === 0) { 
+        alert('Nema novih cijena za čuvanje.'); 
+        return; 
+    }
     
     let count = 0;
     for (const a of bezCijene) {
@@ -543,15 +572,25 @@ async function sacuvajCijeneICjenovnik() {
         count++;
     }
     
+    // Preračunaj sve vrijednosti
+    trenutniPopis.artikli.forEach(a => {
+        a.vrijednost = a.kolicina * a.cijena;
+    });
+    
     await saveToCloud();
     renderPreviewNovi();
-    alert(`✅ Sačuvano ${count} cijena u cjenovnik! Sledeći put će se automatski prepoznati.`);
+    alert(`✅ Sačuvano ${count} cijena u cjenovnik!\n\nSve vrijednosti su preračunate.`);
 }
 
 async function sacuvajNoviPopis() {
     if (!trenutniPopis || !trenutniPopis.artikli || trenutniPopis.artikli.length === 0) {
         alert('⚠️ Učitaj Excel fajl prvo!'); return;
     }
+    
+    // Preračunaj sve prije čuvanja
+    trenutniPopis.artikli.forEach(a => {
+        a.vrijednost = a.kolicina * a.cijena;
+    });
     
     const bezCijene = trenutniPopis.artikli.filter(a => a.cijena === 0);
     if (bezCijene.length > 0) {
@@ -594,18 +633,22 @@ function prikaziPopis(index) {
     
     let ukupnoManjak = 0;
     (p.artikli || []).forEach(a => {
+        // Preračunaj za svaki slučaj
+        a.vrijednost = a.kolicina * a.cijena;
         ukupnoManjak += a.vrijednost || 0;
         const kolicinaClass = a.kolicina < 0 ? 'manjak' : (a.kolicina > 0 ? 'visak' : '');
+        const bojaVrijednost = a.vrijednost < 0 ? '#dc3545' : (a.vrijednost > 0 ? '#28a745' : '#666');
         html += `<tr>
             <td>${a.naziv}</td>
             <td>${a.jm}</td>
             <td class="manjak">${formatBroj(a.manjak)}</td>
             <td class="visak">${formatBroj(a.visak)}</td>
             <td class="kolicina ${kolicinaClass}">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
-            <td style="font-weight:bold;">${(a.vrijednost || 0).toFixed(2)} €</td>
+            <td style="font-weight:bold;color:${bojaVrijednost};">${(a.vrijednost || 0).toFixed(2)} €</td>
         </tr>`;
     });
-    html += `<tr class="total-row"><td colspan="5" style="text-align:right;">UKUPNO MANJAK:</td><td>${ukupnoManjak.toFixed(2)} €</td></tr>`;
+    const bojaUkupno = ukupnoManjak < 0 ? '#dc3545' : '#28a745';
+    html += `<tr class="total-row"><td colspan="5" style="text-align:right;">UKUPNO (Neto manjak):</td><td style="color:${bojaUkupno};">${ukupnoManjak.toFixed(2)} €</td></tr>`;
     html += '</tbody></table>';
     c.innerHTML = html;
     showModal('popisModal');
@@ -784,7 +827,7 @@ function renderManager() {
     const artikli = Array.from(artikliSet).sort();
     
     let html = '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr><th style="min-width:180px;">Artikal</th>';
-    popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>Manjak €</small></th>`; });
+    popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>Neto €</small></th>`; });
     html += '<th>UKUPNO</th></tr></thead><tbody>';
     
     const totalPoMjesecu = {};
@@ -793,13 +836,18 @@ function renderManager() {
         let ukupnoArtikal = 0;
         popisi.forEach(p => {
             const a = (p.artikli || []).find(x => x.naziv === naziv);
-            const v = a ? (a.vrijednost || 0) : 0;
+            let v = 0;
+            if (a) {
+                v = (a.kolicina || 0) * (a.cijena || 0);
+            }
             ukupnoArtikal += v;
             if (!totalPoMjesecu[p.mesec]) totalPoMjesecu[p.mesec] = 0;
             totalPoMjesecu[p.mesec] += v;
-            html += `<td style="color:#dc3545;">${v > 0 ? v.toFixed(2) : '-'}</td>`;
+            const boja = v < 0 ? '#dc3545' : (v > 0 ? '#28a745' : '#666');
+            html += `<td style="color:${boja};">${v !== 0 ? v.toFixed(2) : '-'}</td>`;
         });
-        html += `<td style="font-weight:bold;background:#fff3cd;">${ukupnoArtikal.toFixed(2)} €</td></tr>`;
+        const bojaU = ukupnoArtikal < 0 ? '#dc3545' : '#28a745';
+        html += `<td style="font-weight:bold;background:#fff3cd;color:${bojaU};">${ukupnoArtikal.toFixed(2)} €</td></tr>`;
     });
     
     html += `<tr class="total-row"><td>UKUPNO:</td>`;
@@ -807,9 +855,11 @@ function renderManager() {
     popisi.forEach(p => {
         const t = totalPoMjesecu[p.mesec] || 0;
         grand += t;
-        html += `<td>${t.toFixed(2)} €</td>`;
+        const boja = t < 0 ? '#dc3545' : '#28a745';
+        html += `<td style="color:${boja};">${t.toFixed(2)} €</td>`;
     });
-    html += `<td>${grand.toFixed(2)} €</td></tr></tbody></table></div>`;
+    const bojaG = grand < 0 ? '#dc3545' : '#28a745';
+    html += `<td style="color:${bojaG};">${grand.toFixed(2)} €</td></tr></tbody></table></div>`;
     c.innerHTML = html;
 }
 
@@ -824,17 +874,18 @@ function stampajPopis() {
     
     let ukupno = 0;
     (p.artikli || []).forEach(a => {
-        ukupno += a.vrijednost || 0;
+        const v = (a.kolicina || 0) * (a.cijena || 0);
+        ukupno += v;
         pc += `<tr>
             <td style="border:1px solid #000;padding:4px;">${a.naziv}</td>
             <td style="border:1px solid #000;padding:4px;text-align:center;">${a.jm}</td>
             <td style="border:1px solid #000;padding:4px;text-align:right;">${formatBroj(a.manjak)}</td>
             <td style="border:1px solid #000;padding:4px;text-align:right;">${formatBroj(a.visak)}</td>
             <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${a.kolicina > 0 ? '+' : ''}${formatBroj(a.kolicina)}</td>
-            <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${(a.vrijednost || 0).toFixed(2)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${v.toFixed(2)}</td>
         </tr>`;
     });
-    pc += `<tr style="background:#fff3cd;font-weight:bold;"><td colspan="5" style="border:1px solid #000;padding:6px;text-align:right;">UKUPNO MANJAK:</td><td style="border:1px solid #000;padding:6px;text-align:right;">${ukupno.toFixed(2)} €</td></tr></table>`;
+    pc += `<tr style="background:#fff3cd;font-weight:bold;"><td colspan="5" style="border:1px solid #000;padding:6px;text-align:right;">UKUPNO (Neto manjak):</td><td style="border:1px solid #000;padding:6px;text-align:right;">${ukupno.toFixed(2)} €</td></tr></table>`;
     
     const win = window.open('', '_blank');
     win.document.write(`<html><head><title>Popis</title><style>body{font-family:Arial;padding:15px;}</style></head><body>${pc}</body></html>`);
