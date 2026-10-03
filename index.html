@@ -202,10 +202,44 @@
     <div class="modal-content">
         <div class="modal-header"><h3 id="popisTitle"></h3><button onclick="closeModal('popisModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
         <div id="popisContent"></div>
-        <div style="display:flex;gap:10px;margin-top:10px;" class="no-print">
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;" class="no-print">
             <button onclick="stampajPopis()" class="btn btn-info" style="flex:1;">🖨️ Štampaj A4</button>
+            <button onclick="exportPopisExcel()" class="btn btn-success" style="flex:1;">📊 Excel</button>
+            <button onclick="exportPopisPDF()" class="btn btn-danger" style="flex:1;">📄 PDF</button>
             <button onclick="obrisiPopis()" class="btn btn-danger" style="flex:1;">🗑 Obriši popis</button>
         </div>
+    </div>
+</div>
+
+<!-- MODAL ZA EDIT ARTIKLA U POPISU -->
+<div id="editPopisArtikalModal" class="modal">
+    <div class="modal-content" style="max-width:500px;">
+        <div class="modal-header"><h3>✏️ Uredi artikal u popisu</h3><button onclick="closeModal('editPopisArtikalModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="form-group">
+            <label>Naziv:</label>
+            <input type="text" id="editPopisNaziv" class="search-input">
+        </div>
+        <div class="form-group">
+            <label>J.M.:</label>
+            <select id="editPopisJM" class="search-input">
+                <option value="KOM.">KOM.</option>
+                <option value="LIT.">LIT.</option>
+                <option value="KG.">KG.</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Manjak:</label>
+            <input type="number" id="editPopisManjak" class="search-input" step="any">
+        </div>
+        <div class="form-group">
+            <label>Višak:</label>
+            <input type="number" id="editPopisVisak" class="search-input" step="any">
+        </div>
+        <div class="form-group">
+            <label>Cijena (€) — mijenja se SAMO u ovom popisu:</label>
+            <input type="number" id="editPopisCijena" class="search-input" step="any" min="0">
+        </div>
+        <button onclick="sacuvajEditPopisArtikal()" class="btn btn-success" style="width:100%;padding:12px;">💾 Sačuvaj</button>
     </div>
 </div>
 
@@ -249,6 +283,7 @@ let data = { cjenovnik: [], popisi: [] };
 let trenutniPopis = null;
 let editingArtikalIndex = null;
 let prikazanPopisIndex = null;
+let editingPopisArtikalIndex = null;
 
 const MESECI = ['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
 
@@ -338,10 +373,9 @@ function nadjiCijenu(naziv) {
 function showModal(id) { document.getElementById(id).classList.add('active'); }
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-// ** BOJE: Negativno = CRVENO (manjak), Pozitivno = ZELENO (višak) **
 function bojaVrijednosti(v) {
-    if (v < 0) return '#dc3545';   // Manjak - crveno
-    if (v > 0) return '#28a745';   // Višak - zeleno
+    if (v < 0) return '#dc3545';
+    if (v > 0) return '#28a745';
     return '#666';
 }
 
@@ -445,12 +479,8 @@ function ucitajExcel(event) {
                 const jm = idxJM >= 0 ? toStr(row[idxJM]).trim() : '';
                 const manjak = idxManjak >= 0 ? parseBroj(row[idxManjak]) : 0;
                 const visak = idxVisak >= 0 ? parseBroj(row[idxVisak]) : 0;
-                
-                // ** KONAČNO = VIŠAK - MANJAK **
-                // Negativno = manjak (fali), Pozitivno = višak (ima više)
                 const kolicina = visak - manjak;
                 
-                // Cijena: prvo iz Excela, pa iz cjenovnika
                 let cijena = 0;
                 let pronadjena = false;
                 if (idxCijena >= 0 && row[idxCijena]) {
@@ -462,7 +492,6 @@ function ucitajExcel(event) {
                     if (cj) { cijena = cj.cijena; pronadjena = true; }
                 }
                 
-                // ** VRIJEDNOST = KONAČNO × CIJENA **
                 const vrijednost = kolicina * cijena;
                 
                 artikli.push({
@@ -507,14 +536,12 @@ function renderPreviewNovi() {
     
     let ukupno = 0;
     artikli.forEach((a, idx) => {
-        // ** KONAČNO = VIŠAK - MANJAK **
         a.kolicina = a.visak - a.manjak;
         a.vrijednost = a.kolicina * a.cijena;
         ukupno += a.vrijednost;
         
         const redClass = a.pronadjena ? '' : 'red-bez-cijene';
         const boja = bojaVrijednosti(a.vrijednost);
-        // ** BOJA KONAČNOG **
         const bojaKolicine = a.kolicina < 0 ? '#dc3545' : (a.kolicina > 0 ? '#28a745' : '#666');
         
         html += `<tr class="${redClass}">
@@ -547,7 +574,6 @@ function renderPreviewNovi() {
 function azurirajCijenuNovi(index, vrijednost) {
     const cijena = parseFloat(vrijednost) || 0;
     trenutniPopis.artikli[index].cijena = cijena;
-    // KONAČNO = VIŠAK - MANJAK
     trenutniPopis.artikli[index].kolicina = trenutniPopis.artikli[index].visak - trenutniPopis.artikli[index].manjak;
     trenutniPopis.artikli[index].vrijednost = trenutniPopis.artikli[index].kolicina * cijena;
     trenutniPopis.artikli[index].pronadjena = cijena > 0;
@@ -574,7 +600,6 @@ async function sacuvajCijeneICjenovnik() {
         count++;
     }
     
-    // Preračunaj sve
     trenutniPopis.artikli.forEach(a => { 
         a.kolicina = a.visak - a.manjak;
         a.vrijednost = a.kolicina * a.cijena; 
@@ -590,7 +615,6 @@ async function sacuvajNoviPopis() {
         alert('⚠️ Učitaj Excel prvo!'); return;
     }
     
-    // Preračunaj prije čuvanja
     trenutniPopis.artikli.forEach(a => { 
         a.kolicina = a.visak - a.manjak;
         a.vrijednost = a.kolicina * a.cijena; 
@@ -630,14 +654,20 @@ function prikaziPopis(index) {
     const p = data.popisi[index];
     prikazanPopisIndex = index;
     document.getElementById('popisTitle').textContent = `📅 ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}`;
-    
+    renderPopisContent();
+    showModal('popisModal');
+}
+
+function renderPopisContent() {
+    const p = data.popisi[prikazanPopisIndex];
     const c = document.getElementById('popisContent');
-    let html = '<table class="artikal-table"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>VRIJEDNOST €</th></tr></thead><tbody>';
+    let html = '<table class="artikal-table"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena €</th><th>VRIJEDNOST €</th><th class="no-print">Akcije</th></tr></thead><tbody>';
     
     let ukupnoManjak = 0;
-    (p.artikli || []).forEach(a => {
+    (p.artikli || []).forEach((a, idx) => {
         const kol = (a.visak || 0) - (a.manjak || 0);
-        const v = kol * (a.cijena || 0);
+        const cijena = a.cijena || 0;
+        const v = kol * cijena;
         ukupnoManjak += v;
         const bojaKolicine = kol < 0 ? 'manjak' : (kol > 0 ? 'visak' : '');
         html += `<tr>
@@ -646,13 +676,57 @@ function prikaziPopis(index) {
             <td class="manjak">${formatBroj(a.manjak)}</td>
             <td class="visak">${formatBroj(a.visak)}</td>
             <td class="kolicina ${bojaKolicine}">${kol > 0 ? '+' : ''}${formatBroj(kol)}</td>
+            <td>${cijena.toFixed(3)} €</td>
             <td style="font-weight:bold;color:${bojaVrijednosti(v)};">${v.toFixed(2)} €</td>
+            <td class="no-print">
+                <button class="btn btn-sm btn-info" onclick="urediPopisArtikal(${idx})">✏️</button>
+                <button class="btn btn-sm btn-danger" onclick="obrisiPopisArtikal(${idx})">🗑</button>
+            </td>
         </tr>`;
     });
-    html += `<tr class="total-row"><td colspan="5" style="text-align:right;">UKUPNO:</td><td style="color:${bojaVrijednosti(ukupnoManjak)};">${ukupnoManjak.toFixed(2)} €</td></tr>`;
+    html += `<tr class="total-row"><td colspan="6" style="text-align:right;">UKUPNO:</td><td style="color:${bojaVrijednosti(ukupnoManjak)};">${ukupnoManjak.toFixed(2)} €</td><td class="no-print"></td></tr>`;
     html += '</tbody></table>';
     c.innerHTML = html;
-    showModal('popisModal');
+}
+
+function urediPopisArtikal(index) {
+    if (prikazanPopisIndex === null) return;
+    editingPopisArtikalIndex = index;
+    const a = data.popisi[prikazanPopisIndex].artikli[index];
+    document.getElementById('editPopisNaziv').value = a.naziv || '';
+    document.getElementById('editPopisJM').value = a.jm || 'KOM.';
+    document.getElementById('editPopisManjak').value = a.manjak || 0;
+    document.getElementById('editPopisVisak').value = a.visak || 0;
+    document.getElementById('editPopisCijena').value = a.cijena || 0;
+    showModal('editPopisArtikalModal');
+}
+
+async function sacuvajEditPopisArtikal() {
+    if (prikazanPopisIndex === null || editingPopisArtikalIndex === null) return;
+    const a = data.popisi[prikazanPopisIndex].artikli[editingPopisArtikalIndex];
+    
+    a.naziv = document.getElementById('editPopisNaziv').value.trim();
+    a.jm = document.getElementById('editPopisJM').value;
+    a.manjak = parseFloat(document.getElementById('editPopisManjak').value) || 0;
+    a.visak = parseFloat(document.getElementById('editPopisVisak').value) || 0;
+    // VAŽNO: mijenja cijenu SAMO u ovom popisu, NE u cjenovniku
+    a.cijena = parseFloat(document.getElementById('editPopisCijena').value) || 0;
+    a.kolicina = a.visak - a.manjak;
+    a.vrijednost = a.kolicina * a.cijena;
+    
+    await saveToCloud();
+    closeModal('editPopisArtikalModal');
+    renderPopisContent();
+    renderMain();
+}
+
+async function obrisiPopisArtikal(index) {
+    if (prikazanPopisIndex === null) return;
+    if (!confirm('Obrisati artikal iz popisa?')) return;
+    data.popisi[prikazanPopisIndex].artikli.splice(index, 1);
+    await saveToCloud();
+    renderPopisContent();
+    renderMain();
 }
 
 async function obrisiPopis() {
@@ -663,6 +737,76 @@ async function obrisiPopis() {
     closeModal('popisModal');
     prikazanPopisIndex = null;
     renderMain();
+}
+
+// ==================== EXPORT POPISA U EXCEL ====================
+function exportPopisExcel() {
+    if (prikazanPopisIndex === null) return;
+    const p = data.popisi[prikazanPopisIndex];
+    
+    const rows = [];
+    rows.push([`POPIS - ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}`]);
+    rows.push([]);
+    rows.push(['Naziv', 'J.M.', 'Manjak', 'Višak', 'Konačno', 'Cijena €', 'Vrijednost €']);
+    
+    let ukupno = 0;
+    (p.artikli || []).forEach(a => {
+        const kol = (a.visak || 0) - (a.manjak || 0);
+        const cijena = a.cijena || 0;
+        const v = kol * cijena;
+        ukupno += v;
+        rows.push([a.naziv, a.jm || '', a.manjak || 0, a.visak || 0, kol, cijena, v]);
+    });
+    rows.push([]);
+    rows.push(['', '', '', '', '', 'UKUPNO:', ukupno]);
+    
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+        {wch: 40}, {wch: 8}, {wch: 10}, {wch: 10}, {wch: 10}, {wch: 12}, {wch: 14}
+    ];
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Popis');
+    
+    const naziv = `Popis_${MESECI[p.mesec]}_${p.godina}_${p.sektor}.xlsx`;
+    XLSX.writeFile(wb, naziv);
+}
+
+// ==================== EXPORT POPISA U PDF ====================
+function exportPopisPDF() {
+    if (prikazanPopisIndex === null) return;
+    const p = data.popisi[prikazanPopisIndex];
+    
+    let html = `<h2 style="text-align:center;margin-bottom:5px;">POPIS</h2>`;
+    html += `<h3 style="text-align:center;margin-bottom:15px;">${MESECI[p.mesec].toUpperCase()} ${p.godina} - ${p.sektor}</h3>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    html += '<tr style="background:#f0f0f0;"><th style="border:1px solid #000;padding:5px;text-align:left;">Naziv</th><th style="border:1px solid #000;padding:5px;">J.M.</th><th style="border:1px solid #000;padding:5px;">Manjak</th><th style="border:1px solid #000;padding:5px;">Višak</th><th style="border:1px solid #000;padding:5px;">Konačno</th><th style="border:1px solid #000;padding:5px;">Cijena €</th><th style="border:1px solid #000;padding:5px;">Vrijednost €</th></tr>';
+    
+    let ukupno = 0;
+    (p.artikli || []).forEach(a => {
+        const kol = (a.visak || 0) - (a.manjak || 0);
+        const cijena = a.cijena || 0;
+        const v = kol * cijena;
+        ukupno += v;
+        const boja = v < 0 ? '#dc3545' : (v > 0 ? '#28a745' : '#000');
+        html += `<tr>
+            <td style="border:1px solid #000;padding:4px;">${a.naziv}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:center;">${a.jm || ''}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;">${formatBroj(a.manjak)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;">${formatBroj(a.visak)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${kol > 0 ? '+' : ''}${formatBroj(kol)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;">${cijena.toFixed(3)}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;color:${boja};">${v.toFixed(2)}</td>
+        </tr>`;
+    });
+    html += `<tr style="background:#fff3cd;font-weight:bold;"><td colspan="6" style="border:1px solid #000;padding:6px;text-align:right;">UKUPNO:</td><td style="border:1px solid #000;padding:6px;text-align:right;">${ukupno.toFixed(2)} €</td></tr>`;
+    html += '</table>';
+    html += `<p style="margin-top:15px;font-size:10px;color:#666;">Datum: ${new Date().toLocaleString('hr')}</p>`;
+    
+    const win = window.open('', '_blank');
+    win.document.write(`<html><head><title>Popis PDF</title><style>@page{size:A4 landscape;margin:8mm;}body{font-family:Arial;padding:10px;}</style></head><body>${html}</body></html>`);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 300);
 }
 
 // ==================== CJENOVNIK ====================
