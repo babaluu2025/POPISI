@@ -286,6 +286,7 @@
             <button onclick="zastitiUploadCjenovnik()" class="btn btn-info">📂 Upload cjenovnik</button>
             <input type="file" id="cjenovnikUpload" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajCjenovnik(event)">
             <button onclick="ocistiDuplikate()" class="btn btn-warning">🧹 Očisti duplikate</button>
+            <button onclick="spojiSlicneArtikle()" class="btn btn-purple">🔗 Spoji slične</button>
             <input type="text" id="cjenovnikSearch" placeholder="🔍 Pretraži..." class="search-input" style="flex:1;min-width:200px;" oninput="renderCjenovnik()">
         </div>
         <div id="cjenovnikContent"></div>
@@ -495,6 +496,8 @@ function generisiId() {
 function normalize(str) {
     if (!str) return '';
     return str.toString().toUpperCase().trim()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/Đ/g, 'D')
         .replace(/\([^)]*\)/g, '')
         .replace(/\/S.*$/g, '')
         .replace(/\s+/g, '')
@@ -1759,17 +1762,48 @@ async function ocistiDuplikate() {
     let previewHtml = '<h3>🧹 Pronađeni duplikati</h3>';
     previewHtml += `<p style="margin-bottom:15px;">Pronađeno <strong>${duplikatiGrupe.length}</strong> grupa duplikata. `;
     previewHtml += `Ukupno artikala u cjenovniku: <strong>${originalCount}</strong>.</p>`;
-    previewHtml += '<div style="max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;padding:10px;background:#fafafa;">';
+    previewHtml += `<div class="info-box info-info" style="font-size:12px;">
+        💡 Za svaku grupu odaberi <strong>koji artikal želiš zadržati</strong>. Ostali će biti obrisani.
+    </div>`;
+    previewHtml += '<div style="max-height:500px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;padding:10px;background:#fafafa;">';
     
     let ukupnoVisak = 0;
     duplikatiGrupe.forEach((grupa, gIdx) => {
         ukupnoVisak += grupa.length - 1;
-        previewHtml += `<div style="margin-bottom:12px;padding:10px;background:white;border-left:3px solid #ffc107;border-radius:4px;">`;
-        previewHtml += `<div style="font-weight:bold;color:#856404;margin-bottom:5px;">Grupa ${gIdx + 1} (${grupa.length} artikala):</div>`;
+        previewHtml += `<div style="margin-bottom:15px;padding:12px;background:white;border-left:3px solid #ffc107;border-radius:4px;">`;
+        previewHtml += `<div style="font-weight:bold;color:#856404;margin-bottom:8px;">Grupa ${gIdx + 1} (${grupa.length} artikala):</div>`;
+        
+        let najbolji = 0;
+        let najvecaOcjena = -1;
         grupa.forEach((item, i) => {
             const a = item.artikal;
-            const oznaka = i === 0 ? '<span style="color:#28a745;font-weight:bold;">✅ ZADRŽI</span>' : '<span style="color:#dc3545;font-weight:bold;">🗑 OBRIŠI</span>';
-            previewHtml += `<div style="padding:3px 0;font-size:13px;">${oznaka} &nbsp; "${a.naziv}" — ${(a.cijena || 0).toFixed(3)} €</div>`;
+            let ocjena = 0;
+            if (a.aliasi && a.aliasi.length > 0) ocjena += a.aliasi.length * 10;
+            if (a.grupa) ocjena += 5;
+            if (a.jm) ocjena += 2;
+            if (a.cijena > 0) ocjena += 1;
+            if (/[čćžšđČĆŽŠĐ]/.test(a.naziv)) ocjena += 3;
+            if (ocjena > najvecaOcjena) { najvecaOcjena = ocjena; najbolji = i; }
+        });
+        
+        grupa.forEach((item, i) => {
+            const a = item.artikal;
+            const aliasiStr = (a.aliasi && a.aliasi.length > 0) ? ` [${a.aliasi.length} aliasa]` : '';
+            const grupaStr = a.grupa ? ` [grupa: ${a.grupa}]` : '';
+            const preporuka = i === najbolji ? ' <span style="color:#28a745;font-size:11px;">(preporučeno)</span>' : '';
+            const checked = i === najbolji ? 'checked' : '';
+            
+            previewHtml += `
+                <label style="display:flex;align-items:center;padding:6px;font-size:13px;cursor:pointer;border-radius:4px;background:${i === najbolji ? '#e8f5e9' : 'transparent'};">
+                    <input type="radio" name="grupa_${gIdx}" value="${item.originalIndex}" ${checked} style="margin-right:8px;">
+                    <span style="flex:1;">
+                        <strong>${a.naziv}</strong>
+                        <span style="color:#667eea;margin-left:8px;">${(a.cijena || 0).toFixed(3)} €</span>
+                        <span style="color:#6f42c1;font-size:11px;">${aliasiStr}${grupaStr}</span>
+                        ${preporuka}
+                    </span>
+                </label>
+            `;
         });
         previewHtml += '</div>';
     });
@@ -1782,7 +1816,7 @@ async function ocistiDuplikate() {
     
     const modalHtml = `
         <div id="${modalId}" class="modal active" onclick="if(event.target.id==='${modalId}') this.remove()">
-            <div class="modal-content" style="max-width:700px;">
+            <div class="modal-content" style="max-width:800px;">
                 <div class="modal-header">
                     <h3>🧹 Čišćenje duplikata</h3>
                     <button onclick="document.getElementById('${modalId}').remove()" style="font-size:28px;background:none;border:none;">&times;</button>
@@ -1802,22 +1836,205 @@ async function ocistiDuplikate() {
 
 async function potvrdiBrisanjeDuplikata() {
     if (!window._duplikatiGrupe) return;
+    
     const indeksiZaBrisanje = [];
-    window._duplikatiGrupe.forEach(grupa => {
-        for (let i = 1; i < grupa.length; i++) {
-            indeksiZaBrisanje.push(grupa[i].originalIndex);
-        }
+    
+    window._duplikatiGrupe.forEach((grupa, gIdx) => {
+        const odabrani = document.querySelector(`input[name="grupa_${gIdx}"]:checked`);
+        if (!odabrani) return;
+        
+        const zadrzaniIndex = parseInt(odabrani.value);
+        
+        grupa.forEach(item => {
+            if (item.originalIndex !== zadrzaniIndex) {
+                indeksiZaBrisanje.push(item.originalIndex);
+            }
+        });
     });
+    
+    if (indeksiZaBrisanje.length === 0) {
+        alert('Nema duplikata za brisanje.');
+        return;
+    }
+    
     indeksiZaBrisanje.sort((a, b) => b - a);
     indeksiZaBrisanje.forEach(idx => {
         data.cjenovnik.splice(idx, 1);
     });
+    
     await saveToCloud();
     renderCjenovnik();
+    
     const modal = document.getElementById('duplikatiPreviewModal');
     if (modal) modal.remove();
     window._duplikatiGrupe = null;
+    
     alert(`✅ Obrisano ${indeksiZaBrisanje.length} duplikata!\n\nUkupno u cjenovniku sada: ${data.cjenovnik.length}`);
+}
+
+// ==================== SPAJANJE SLIČNIH ARTIKALA ====================
+async function spojiSlicneArtikle() {
+    if (data.cjenovnik.length === 0) {
+        alert('Cjenovnik je prazan.');
+        return;
+    }
+    
+    // Grupisanje po "osnovi" naziva — bez veličine, bez 1/1, bez zagrada
+    const grupe = {};
+    data.cjenovnik.forEach((a, idx) => {
+        let osnova = normalize(a.naziv)
+            .replace(/\d+(\d+)?/g, '') // ukloni brojeve (veličine)
+            .replace(/[\/]/g, '')
+            .trim();
+        
+        if (!osnova || osnova.length < 3) return;
+        
+        if (!grupe[osnova]) grupe[osnova] = [];
+        grupe[osnova].push({ artikal: a, originalIndex: idx });
+    });
+    
+    const kandidatiGrupe = Object.values(grupe).filter(g => g.length > 1);
+    
+    if (kandidatiGrupe.length === 0) {
+        alert('✅ Nema sličnih artikala za spajanje.');
+        return;
+    }
+    
+    let previewHtml = '<h3>🔗 Spajanje sličnih artikala</h3>';
+    previewHtml += `<p style="margin-bottom:15px;">Pronađeno <strong>${kandidatiGrupe.length}</strong> grupa sličnih artikala. `;
+    previewHtml += `Za svaku grupu odaberi <strong>glavni artikal</strong> — ostali će postati njegovi aliasi (i biće obrisani kao zasebni).</p>`;
+    previewHtml += `<div class="info-box info-info" style="font-size:12px;">
+        💡 <strong>Alijasi</strong> omogućavaju da se isti artikal prepozna pod različitim nazivima u budućim popisima.
+        Cijena glavnog artikla ostaje, a svi ostali nazivi će se mapirati na njega.
+    </div>`;
+    previewHtml += '<div style="max-height:500px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;padding:10px;background:#fafafa;">';
+    
+    let ukupnoSpojiti = 0;
+    kandidatiGrupe.forEach((grupa, gIdx) => {
+        ukupnoSpojiti += grupa.length - 1;
+        previewHtml += `<div style="margin-bottom:15px;padding:12px;background:white;border-left:3px solid #6f42c1;border-radius:4px;">`;
+        previewHtml += `<div style="font-weight:bold;color:#6f42c1;margin-bottom:8px;">Grupa ${gIdx + 1} (${grupa.length} artikala):</div>`;
+        
+        // Preporuka: onaj sa najviše informacija (aliasi, grupa, kvačice)
+        let najbolji = 0;
+        let najvecaOcjena = -1;
+        grupa.forEach((item, i) => {
+            const a = item.artikal;
+            let ocjena = 0;
+            if (a.aliasi && a.aliasi.length > 0) ocjena += a.aliasi.length * 10;
+            if (a.grupa) ocjena += 5;
+            if (a.jm) ocjena += 2;
+            if (a.cijena > 0) ocjena += 1;
+            if (/[čćžšđČĆŽŠĐ]/.test(a.naziv)) ocjena += 3;
+            if (ocjena > najvecaOcjena) { najvecaOcjena = ocjena; najbolji = i; }
+        });
+        
+        grupa.forEach((item, i) => {
+            const a = item.artikal;
+            const aliasiStr = (a.aliasi && a.aliasi.length > 0) ? ` [${a.aliasi.length} aliasa]` : '';
+            const preporuka = i === najbolji ? ' <span style="color:#28a745;font-size:11px;">(preporučeno)</span>' : '';
+            const checked = i === najbolji ? 'checked' : '';
+            
+            previewHtml += `
+                <label style="display:flex;align-items:center;padding:6px;font-size:13px;cursor:pointer;border-radius:4px;background:${i === najbolji ? '#e8f5e9' : 'transparent'};">
+                    <input type="radio" name="spoji_${gIdx}" value="${item.originalIndex}" ${checked} style="margin-right:8px;">
+                    <span style="flex:1;">
+                        <strong>${a.naziv}</strong>
+                        <span style="color:#667eea;margin-left:8px;">${(a.cijena || 0).toFixed(3)} €</span>
+                        <span style="color:#6f42c1;font-size:11px;">${aliasiStr}</span>
+                        ${preporuka}
+                    </span>
+                </label>
+            `;
+        });
+        previewHtml += '</div>';
+    });
+    previewHtml += '</div>';
+    previewHtml += `<p style="margin-top:15px;color:#6f42c1;font-weight:bold;">Biće spojeno: ${ukupnoSpojiti} artikala.</p>`;
+    
+    const modalId = 'spojiPreviewModal';
+    let existingModal = document.getElementById(modalId);
+    if (existingModal) existingModal.remove();
+    
+    const modalHtml = `
+        <div id="${modalId}" class="modal active" onclick="if(event.target.id==='${modalId}') this.remove()">
+            <div class="modal-content" style="max-width:800px;">
+                <div class="modal-header">
+                    <h3>🔗 Spajanje sličnih artikala</h3>
+                    <button onclick="document.getElementById('${modalId}').remove()" style="font-size:28px;background:none;border:none;">&times;</button>
+                </div>
+                ${previewHtml}
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                    <button onclick="document.getElementById('${modalId}').remove()" class="btn btn-secondary" style="flex:1;padding:12px;">❌ Otkaži</button>
+                    <button onclick="potvrdiSpajanje()" class="btn btn-purple" style="flex:1;padding:12px;">🔗 Spoji ${ukupnoSpojiti} artikala</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    window._spojiGrupe = kandidatiGrupe;
+}
+
+async function potvrdiSpajanje() {
+    if (!window._spojiGrupe) return;
+    
+    const indeksiZaBrisanje = [];
+    let spojeno = 0;
+    
+    window._spojiGrupe.forEach((grupa, gIdx) => {
+        const odabrani = document.querySelector(`input[name="spoji_${gIdx}"]:checked`);
+        if (!odabrani) return;
+        
+        const glavniIndex = parseInt(odabrani.value);
+        const glavniArtikal = data.cjenovnik[glavniIndex];
+        
+        if (!glavniArtikal.aliasi) glavniArtikal.aliasi = [];
+        
+        grupa.forEach(item => {
+            if (item.originalIndex !== glavniIndex) {
+                // Dodaj naziv kao alias glavnom
+                const stariNaziv = item.artikal.naziv;
+                const normStari = normalize(stariNaziv);
+                const normGlavni = normalize(glavniArtikal.naziv);
+                
+                if (normStari !== normGlavni && !glavniArtikal.aliasi.some(al => normalize(al) === normStari)) {
+                    glavniArtikal.aliasi.push(stariNaziv);
+                }
+                
+                // Dodaj i aliasе starog artikla
+                (item.artikal.aliasi || []).forEach(al => {
+                    const normAl = normalize(al);
+                    if (normAl !== normGlavni && !glavniArtikal.aliasi.some(x => normalize(x) === normAl)) {
+                        glavniArtikal.aliasi.push(al);
+                    }
+                });
+                
+                indeksiZaBrisanje.push(item.originalIndex);
+                spojeno++;
+            }
+        });
+    });
+    
+    if (indeksiZaBrisanje.length === 0) {
+        alert('Nema artikala za spajanje.');
+        return;
+    }
+    
+    // Obriši od najvećeg indeksa
+    indeksiZaBrisanje.sort((a, b) => b - a);
+    indeksiZaBrisanje.forEach(idx => {
+        data.cjenovnik.splice(idx, 1);
+    });
+    
+    await saveToCloud();
+    renderCjenovnik();
+    
+    const modal = document.getElementById('spojiPreviewModal');
+    if (modal) modal.remove();
+    window._spojiGrupe = null;
+    
+    alert(`✅ Spojeno ${spojeno} artikala!\n\nSvi nazivi su sada aliasi glavnih artikala.\nUkupno u cjenovniku: ${data.cjenovnik.length}`);
 }
 
 // ==================== MENADŽER ====================
@@ -1895,38 +2112,74 @@ function renderManager() {
         return;
     }
     
-    const artikliSet = new Set();
-    popisi.forEach(p => (p.artikli || []).forEach(a => artikliSet.add(a.naziv)));
-    const artikli = Array.from(artikliSet).sort();
+    // ** GRUPISANJE PO CJENOVNIČKOM ARTIKLU **
+    const artikliMap = {};
+    
+    popisi.forEach((p, pIndex) => {
+        (p.artikli || []).forEach(a => {
+            if (!a.naziv) return;
+            
+            const cjArtikal = nadjiCijenu(a.naziv);
+            const key = cjArtikal ? normalize(cjArtikal.naziv) : normalize(a.naziv);
+            if (!key) return;
+            
+            const prikazniNaziv = cjArtikal ? cjArtikal.naziv : a.naziv;
+            
+            if (!artikliMap[key]) {
+                artikliMap[key] = {
+                    prikazniNaziv: prikazniNaziv,
+                    poMjesecu: {}
+                };
+            }
+            
+            const kol = (a.visak || 0) - (a.manjak || 0);
+            const vrijednost = kol * (a.cijena || 0);
+            
+            if (!artikliMap[key].poMjesecu[pIndex]) {
+                artikliMap[key].poMjesecu[pIndex] = { vrijednost: 0, kol: 0 };
+            }
+            artikliMap[key].poMjesecu[pIndex].vrijednost += vrijednost;
+            artikliMap[key].poMjesecu[pIndex].kol += kol;
+        });
+    });
+    
+    const artikliKeys = Object.keys(artikliMap).sort((a, b) => {
+        return artikliMap[a].prikazniNaziv.localeCompare(artikliMap[b].prikazniNaziv);
+    });
     
     let html = `<h3 style="margin-bottom:10px;">${lokal.naziv} — ${sektor} — ${godina}</h3>`;
+    html += `<div class="info-box info-info" style="font-size:12px;margin-bottom:10px;">
+        💡 Artikli su grupisani po <strong>cjenovničkom artiklu</strong>. Isti artikal sa različitim nazivima (kvačice, razmaci) prikazuje se kao <strong>jedan red</strong>.
+    </div>`;
     html += '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr><th style="min-width:180px;">Artikal</th>';
     popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>€</small></th>`; });
     html += '<th>UKUPNO</th></tr></thead><tbody>';
     
     const totalPoMjesecu = {};
-    artikli.forEach(naziv => {
-        html += `<tr><td style="font-weight:bold;">${naziv}</td>`;
+    
+    artikliKeys.forEach(key => {
+        const item = artikliMap[key];
+        html += `<tr><td style="font-weight:bold;">${item.prikazniNaziv}</td>`;
         let ukupnoArtikal = 0;
-        popisi.forEach(p => {
-            const a = (p.artikli || []).find(x => x.naziv === naziv);
-            let v = 0;
-            if (a) {
-                const kol = (a.visak || 0) - (a.manjak || 0);
-                v = kol * (a.cijena || 0);
-            }
+        
+        popisi.forEach((p, pIndex) => {
+            const mj = item.poMjesecu[pIndex];
+            const v = mj ? mj.vrijednost : 0;
             ukupnoArtikal += v;
-            if (!totalPoMjesecu[p.mesec]) totalPoMjesecu[p.mesec] = 0;
-            totalPoMjesecu[p.mesec] += v;
+            
+            if (!totalPoMjesecu[pIndex]) totalPoMjesecu[pIndex] = 0;
+            totalPoMjesecu[pIndex] += v;
+            
             html += `<td style="color:${bojaVrijednosti(v)};">${v !== 0 ? v.toFixed(2) : '-'}</td>`;
         });
+        
         html += `<td style="font-weight:bold;background:#fff3cd;color:${bojaVrijednosti(ukupnoArtikal)};">${ukupnoArtikal.toFixed(2)} €</td></tr>`;
     });
     
     html += `<tr class="total-row"><td>UKUPNO:</td>`;
     let grand = 0;
-    popisi.forEach(p => {
-        const t = totalPoMjesecu[p.mesec] || 0;
+    popisi.forEach((p, pIndex) => {
+        const t = totalPoMjesecu[pIndex] || 0;
         grand += t;
         html += `<td style="color:${bojaVrijednosti(t)};">${t.toFixed(2)} €</td>`;
     });
