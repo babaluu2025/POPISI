@@ -287,6 +287,7 @@
             <input type="file" id="cjenovnikUpload" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajCjenovnik(event)">
             <button onclick="ocistiDuplikate()" class="btn btn-warning">🧹 Očisti duplikate</button>
             <button onclick="spojiSlicneArtikle()" class="btn btn-purple">🔗 Spoji slične</button>
+            <button onclick="ocistiSveAliase()" class="btn btn-danger">🧨 Očisti sve aliasе</button>
             <input type="text" id="cjenovnikSearch" placeholder="🔍 Pretraži..." class="search-input" style="flex:1;min-width:200px;" oninput="renderCjenovnik()">
         </div>
         <div id="cjenovnikContent"></div>
@@ -496,6 +497,7 @@ function generisiId() {
 function normalize(str) {
     if (!str) return '';
     return str.toString().toUpperCase().trim()
+        .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, '')
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .replace(/Đ/g, 'D')
         .replace(/\([^)]*\)/g, '')
@@ -1879,11 +1881,10 @@ async function spojiSlicneArtikle() {
         return;
     }
     
-    // Grupisanje po "osnovi" naziva — bez veličine, bez 1/1, bez zagrada
     const grupe = {};
     data.cjenovnik.forEach((a, idx) => {
         let osnova = normalize(a.naziv)
-            .replace(/\d+(\d+)?/g, '') // ukloni brojeve (veličine)
+            .replace(/\d+(\d+)?/g, '')
             .replace(/[\/]/g, '')
             .trim();
         
@@ -1915,7 +1916,6 @@ async function spojiSlicneArtikle() {
         previewHtml += `<div style="margin-bottom:15px;padding:12px;background:white;border-left:3px solid #6f42c1;border-radius:4px;">`;
         previewHtml += `<div style="font-weight:bold;color:#6f42c1;margin-bottom:8px;">Grupa ${gIdx + 1} (${grupa.length} artikala):</div>`;
         
-        // Preporuka: onaj sa najviše informacija (aliasi, grupa, kvačice)
         let najbolji = 0;
         let najvecaOcjena = -1;
         grupa.forEach((item, i) => {
@@ -1993,7 +1993,6 @@ async function potvrdiSpajanje() {
         
         grupa.forEach(item => {
             if (item.originalIndex !== glavniIndex) {
-                // Dodaj naziv kao alias glavnom
                 const stariNaziv = item.artikal.naziv;
                 const normStari = normalize(stariNaziv);
                 const normGlavni = normalize(glavniArtikal.naziv);
@@ -2002,7 +2001,6 @@ async function potvrdiSpajanje() {
                     glavniArtikal.aliasi.push(stariNaziv);
                 }
                 
-                // Dodaj i aliasе starog artikla
                 (item.artikal.aliasi || []).forEach(al => {
                     const normAl = normalize(al);
                     if (normAl !== normGlavni && !glavniArtikal.aliasi.some(x => normalize(x) === normAl)) {
@@ -2021,7 +2019,6 @@ async function potvrdiSpajanje() {
         return;
     }
     
-    // Obriši od najvećeg indeksa
     indeksiZaBrisanje.sort((a, b) => b - a);
     indeksiZaBrisanje.forEach(idx => {
         data.cjenovnik.splice(idx, 1);
@@ -2035,6 +2032,30 @@ async function potvrdiSpajanje() {
     window._spojiGrupe = null;
     
     alert(`✅ Spojeno ${spojeno} artikala!\n\nSvi nazivi su sada aliasi glavnih artikala.\nUkupno u cjenovniku: ${data.cjenovnik.length}`);
+}
+
+// ==================== OČISTI SVE ALIASE ====================
+async function ocistiSveAliase() {
+    if (data.cjenovnik.length === 0) {
+        alert('Cjenovnik je prazan.');
+        return;
+    }
+    
+    const brojAliasa = data.cjenovnik.reduce((sum, a) => sum + (a.aliasi || []).length, 0);
+    
+    if (brojAliasa === 0) {
+        alert('✅ Nema aliasa u cjenovniku.');
+        return;
+    }
+    
+    if (!confirm(`⚠️ Ovo će obrisati SVE aliasе iz cjenovnika (${brojAliasa} aliasa ukupno).\n\nNakon toga, mapiranje ćeš morati ponovo raditi kroz 🔍 u popisima.\n\nNastaviti?`)) return;
+    
+    data.cjenovnik.forEach(a => { a.aliasi = []; });
+    
+    await saveToCloud();
+    renderCjenovnik();
+    
+    alert(`✅ Obrisano ${brojAliasa} aliasa iz cjenovnika.\n\nCjenovnik je sada čist. Mapiranja možeš ponovo raditi kroz 🔍 dugme u popisima.`);
 }
 
 // ==================== MENADŽER ====================
@@ -2112,22 +2133,19 @@ function renderManager() {
         return;
     }
     
-    // ** GRUPISANJE PO CJENOVNIČKOM ARTIKLU **
+    // ** GRUPISANJE PO NORMALIZOVANOM NAZIVU IZ POPISA **
     const artikliMap = {};
     
     popisi.forEach((p, pIndex) => {
         (p.artikli || []).forEach(a => {
             if (!a.naziv) return;
             
-            const cjArtikal = nadjiCijenu(a.naziv);
-            const key = cjArtikal ? normalize(cjArtikal.naziv) : normalize(a.naziv);
+            const key = normalize(a.naziv);
             if (!key) return;
-            
-            const prikazniNaziv = cjArtikal ? cjArtikal.naziv : a.naziv;
             
             if (!artikliMap[key]) {
                 artikliMap[key] = {
-                    prikazniNaziv: prikazniNaziv,
+                    prikazniNaziv: a.naziv,
                     poMjesecu: {}
                 };
             }
@@ -2149,7 +2167,7 @@ function renderManager() {
     
     let html = `<h3 style="margin-bottom:10px;">${lokal.naziv} — ${sektor} — ${godina}</h3>`;
     html += `<div class="info-box info-info" style="font-size:12px;margin-bottom:10px;">
-        💡 Artikli su grupisani po <strong>cjenovničkom artiklu</strong>. Isti artikal sa različitim nazivima (kvačice, razmaci) prikazuje se kao <strong>jedan red</strong>.
+        💡 Artikli su grupisani po <strong>nazivu iz popisa</strong> (ignorišu se kvačice, razmaci, velika/mala slova).
     </div>`;
     html += '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr><th style="min-width:180px;">Artikal</th>';
     popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>€</small></th>`; });
