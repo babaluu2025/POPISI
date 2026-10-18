@@ -42,7 +42,6 @@
         .sync-online { background: #28a745; }
         .sync-offline { background: #dc3545; }
 
-        /* LOKALI */
         .lokali-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-bottom: 25px; }
         .lokal-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; position: relative; border-left: 5px solid #667eea; }
         .lokal-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.15); transform: translateY(-2px); }
@@ -51,7 +50,6 @@
         .lokal-card .lokal-stats { font-size: 13px; color: #666; margin-top: 10px; }
         .lokal-card .lokal-actions { position: absolute; top: 10px; right: 10px; }
 
-        /* FOLDERI */
         .folderi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
         .folder-card { background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; border-top: 5px solid #667eea; text-align: center; }
         .folder-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.15); transform: translateY(-2px); }
@@ -204,6 +202,7 @@
             <button onclick="showDodajArtikal()" class="btn btn-success">+ Dodaj artikal</button>
             <button onclick="document.getElementById('cjenovnikUpload').click()" class="btn btn-info">📂 Upload cjenovnik</button>
             <input type="file" id="cjenovnikUpload" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajCjenovnik(event)">
+            <button onclick="ocistiDuplikate()" class="btn btn-warning">🧹 Očisti duplikate</button>
             <input type="text" id="cjenovnikSearch" placeholder="🔍 Pretraži..." class="search-input" style="flex:1;min-width:200px;" oninput="renderCjenovnik()">
         </div>
         <div id="cjenovnikContent"></div>
@@ -321,18 +320,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_nbUWlCIXbB48NoBRhH4ucg_PfCAmau1';
 let supabaseClient = null;
 try { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
 
-// data struktura:
-// { cjenovnik: [], lokali: [ { id, naziv, popisi: [ { mesec, godina, sektor, artikli, datumKreiranja } ] } ] }
 let data = { cjenovnik: [], lokali: [] };
 let trenutniPopis = null;
 let editingArtikalIndex = null;
 let editingLokalId = null;
 
-// navigacija
-let aktivniLokalId = null;   // null = prikaz svih lokala
-let aktivniSektor = null;    // null = prikaz foldera u lokalu
+let aktivniLokalId = null;
+let aktivniSektor = null;
 
-// reference na trenutno prikazan popis
 let prikazanLokalId = null;
 let prikazanPopisIndex = null;
 let editingPopisArtikalIndex = null;
@@ -373,24 +368,20 @@ function loadLocal() {
 }
 function saveLocal() { localStorage.setItem('popis_data', JSON.stringify(data)); }
 
-// Migracija starih podataka (popisi na vrhu) u novu strukturu sa lokalima
 function migrateData() {
     if (!data) data = { cjenovnik: [], lokali: [] };
     if (!data.cjenovnik) data.cjenovnik = [];
     
-    // stara struktura: data.popisi
     if (data.popisi && data.popisi.length > 0) {
         const stariPopisi = data.popisi;
         if (!data.lokali) data.lokali = [];
         
-        // Nađi ili napravi "Lokal 1"
         let lokal1 = data.lokali.find(l => l.naziv === 'Lokal 1');
         if (!lokal1) {
             lokal1 = { id: generisiId(), naziv: 'Lokal 1', popisi: [] };
             data.lokali.push(lokal1);
         }
         
-        // Premjesti sve popise u Lokal 1
         stariPopisi.forEach(p => {
             lokal1.popisi.push({
                 mesec: p.mesec, godina: p.godina, sektor: p.sektor,
@@ -516,21 +507,15 @@ document.getElementById('logoutBtn').onclick = () => {
 
 // ==================== GLAVNI EKRAN ====================
 function renderMain() {
-    const c = document.getElementById('mainContent');
-    
     if (aktivniLokalId === null) {
-        // PRIKAZ SVIH LOKALA
         renderLokali();
     } else if (aktivniSektor === null) {
-        // PRIKAZ FOLDERA (ŠANK, KUHINJA) unutar lokala
         renderFolderi();
     } else {
-        // PRIKAZ POPISA unutar sektora
         renderPopisiSektora();
     }
 }
 
-// --- NIVO 1: LOKALI ---
 function renderLokali() {
     const c = document.getElementById('mainContent');
     let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px;">';
@@ -569,7 +554,6 @@ function renderLokali() {
     c.innerHTML = html;
 }
 
-// --- NIVO 2: FOLDERI (ŠANK, KUHINJA) ---
 function renderFolderi() {
     const c = document.getElementById('mainContent');
     const lokal = getLokal(aktivniLokalId);
@@ -598,7 +582,6 @@ function renderFolderi() {
     c.innerHTML = html;
 }
 
-// --- NIVO 3: POPISI UNUTAR SEKTORA ---
 function renderPopisiSektora() {
     const c = document.getElementById('mainContent');
     const lokal = getLokal(aktivniLokalId);
@@ -624,7 +607,6 @@ function renderPopisiSektora() {
         return;
     }
     
-    // sortiraj po datumu (najnoviji prvi)
     const sorted = [...popisi].sort((a, b) => {
         if (a.godina !== b.godina) return b.godina - a.godina;
         return b.mesec - a.mesec;
@@ -632,7 +614,6 @@ function renderPopisiSektora() {
     
     sorted.forEach(p => {
         const ukupno = izracunajUkupnoPopis(p);
-        // nađi originalni index u lokal.popisi
         const origIndex = lokal.popisi.indexOf(p);
         html += `
             <div class="popis-card" onclick="prikaziPopis('${lokal.id}', ${origIndex})">
@@ -651,27 +632,10 @@ function renderPopisiSektora() {
     c.innerHTML = html;
 }
 
-function idiNaLokale() {
-    aktivniLokalId = null;
-    aktivniSektor = null;
-    renderMain();
-}
-
-function idiNaFoldere() {
-    aktivniSektor = null;
-    renderMain();
-}
-
-function otvoriLokal(id) {
-    aktivniLokalId = id;
-    aktivniSektor = null;
-    renderMain();
-}
-
-function otvoriSektor(sektor) {
-    aktivniSektor = sektor;
-    renderMain();
-}
+function idiNaLokale() { aktivniLokalId = null; aktivniSektor = null; renderMain(); }
+function idiNaFoldere() { aktivniSektor = null; renderMain(); }
+function otvoriLokal(id) { aktivniLokalId = id; aktivniSektor = null; renderMain(); }
+function otvoriSektor(sektor) { aktivniSektor = sektor; renderMain(); }
 
 // ==================== LOKALI CRUD ====================
 function showNoviLokal() {
@@ -729,11 +693,9 @@ function showNoviPopis() {
     document.getElementById('previewNovi').innerHTML = '';
     document.getElementById('dugmadNovi').style.display = 'none';
     
-    // popuni padajuću listu lokala
     const selLokal = document.getElementById('noviLokal');
     selLokal.innerHTML = data.lokali.map(l => `<option value="${l.id}">${l.naziv}</option>`).join('');
     
-    // ako smo u lokalu, postavi ga kao default
     if (aktivniLokalId) selLokal.value = aktivniLokalId;
     if (aktivniSektor) document.getElementById('noviSektor').value = aktivniSektor;
     
@@ -1024,7 +986,6 @@ async function sacuvajEditPopisArtikal() {
     a.jm = document.getElementById('editPopisJM').value;
     a.manjak = parseFloat(document.getElementById('editPopisManjak').value) || 0;
     a.visak = parseFloat(document.getElementById('editPopisVisak').value) || 0;
-    // VAŽNO: mijenja cijenu SAMO u ovom popisu, NE u cjenovniku
     a.cijena = parseFloat(document.getElementById('editPopisCijena').value) || 0;
     a.kolicina = a.visak - a.manjak;
     a.vrijednost = a.kolicina * a.cijena;
@@ -1218,6 +1179,7 @@ async function obrisiArtikal(index) {
     renderCjenovnik();
 }
 
+// ==================== PAMETNI UVOZ CJENOVNIKA ====================
 function ucitajCjenovnik(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -1228,51 +1190,180 @@ function ucitajCjenovnik(event) {
             const ws = wb.Sheets[wb.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
             
-            let headerIndex = -1;
+            let dodano = 0;
+            let preskoceno = 0;
+            
             for (let i = 0; i < rows.length; i++) {
-                const row = (rows[i] || []).map(c => toStr(c).toLowerCase());
-                if (row.some(c => c.includes('naziv')) && row.some(c => c.includes('cijena'))) {
-                    headerIndex = i; break;
-                }
-            }
-            if (headerIndex === -1) { alert('❌ Ne mogu da nađem header (Naziv, Cijena).'); return; }
-            
-            const header = rows[headerIndex].map(c => toStr(c).toLowerCase().trim());
-            const idxNaziv = header.findIndex(h => h.includes('naziv'));
-            const idxGrupa = header.findIndex(h => h.includes('grupa'));
-            const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
-            const idxCijena = header.findIndex(h => h.includes('cijena'));
-            
-            let count = 0;
-            for (let i = headerIndex + 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row || !row[idxNaziv]) continue;
-                const naziv = toStr(row[idxNaziv]).trim();
+                const row = rows[i] || [];
+                let naziv = toStr(row[0]).trim();
+                
                 if (!naziv) continue;
-                const grupa = idxGrupa >= 0 ? toStr(row[idxGrupa]).trim() : '';
-                const jm = idxJM >= 0 ? toStr(row[idxJM]).trim() : '';
-                const cijena = idxCijena >= 0 ? parseBroj(row[idxCijena]) : 0;
+                
+                const nazivLower = naziv.toLowerCase();
+                if (nazivLower === 'naziv' || nazivLower === 'strana' || 
+                    nazivLower.includes('cijena sa rabatom') ||
+                    nazivLower === 'ukupno' || nazivLower === 'naplaceno') {
+                    preskoceno++;
+                    continue;
+                }
+                
+                naziv = naziv.replace(/\(\s*razduzenje[^)]*\)/gi, '').trim();
+                naziv = naziv.replace(/\s+/g, ' ').trim();
+                
+                if (naziv.length < 2) { preskoceno++; continue; }
+                
+                let cijena = 0;
+                let nadjenaCijena = false;
+                
+                if (row[7] !== undefined && row[7] !== null && row[7] !== '') {
+                    const c = parseBroj(row[7]);
+                    if (c > 0) {
+                        cijena = c;
+                        nadjenaCijena = true;
+                    }
+                }
+                
+                if (!nadjenaCijena) {
+                    for (let colIdx = 2; colIdx < row.length; colIdx++) {
+                        const cellVal = row[colIdx];
+                        if (cellVal === undefined || cellVal === null || cellVal === '') continue;
+                        const c = parseBroj(cellVal);
+                        if (c > 0 && c < 10000) {
+                            cijena = c;
+                            nadjenaCijena = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!nadjenaCijena) { preskoceno++; continue; }
                 
                 const existing = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv));
                 if (existing >= 0) {
-                    data.cjenovnik[existing] = { naziv, grupa, jm, cijena };
+                    data.cjenovnik[existing] = { naziv, grupa: '', jm: 'KOM.', cijena };
                 } else {
-                    data.cjenovnik.push({ naziv, grupa, jm, cijena });
+                    data.cjenovnik.push({ naziv, grupa: '', jm: 'KOM.', cijena });
+                    dodano++;
                 }
-                count++;
             }
             
             await saveToCloud();
             renderCjenovnik();
-            alert(`✅ Učitano ${count} artikala`);
-        } catch (err) { alert('❌ Greška: ' + err.message); }
+            
+            alert(`✅ Uvezeno!\n\nNovih artikala: ${dodano}\nUkupno u cjenovniku: ${data.cjenovnik.length}\nPreskočeno redova: ${preskoceno}`);
+        } catch (err) { 
+            console.error(err);
+            alert('❌ Greška: ' + err.message); 
+        }
     };
     reader.readAsBinaryString(file);
 }
 
+// ==================== ČIŠĆENJE DUPLIKATA ====================
+async function ocistiDuplikate() {
+    if (data.cjenovnik.length === 0) {
+        alert('Cjenovnik je prazan.');
+        return;
+    }
+    
+    const originalCount = data.cjenovnik.length;
+    
+    // Grupisi po normalizovanom nazivu
+    const grupe = {};
+    data.cjenovnik.forEach((a, idx) => {
+        const key = normalize(a.naziv);
+        if (!key) return; // preskoči prazne
+        if (!grupe[key]) grupe[key] = [];
+        grupe[key].push({ artikal: a, originalIndex: idx });
+    });
+    
+    // Nađi sve grupe sa više od 1 člana
+    const duplikatiGrupe = Object.values(grupe).filter(g => g.length > 1);
+    
+    if (duplikatiGrupe.length === 0) {
+        alert('✅ Nema duplikata! Cjenovnik je čist.');
+        return;
+    }
+    
+    // Prikaži preview duplikata
+    let previewHtml = '<h3>🧹 Pronađeni duplikati</h3>';
+    previewHtml += `<p style="margin-bottom:15px;">Pronađeno <strong>${duplikatiGrupe.length}</strong> grupa duplikata. `;
+    previewHtml += `Ukupno artikala u cjenovniku: <strong>${originalCount}</strong>.</p>`;
+    previewHtml += '<div style="max-height:400px;overflow-y:auto;border:1px solid #ddd;border-radius:6px;padding:10px;background:#fafafa;">';
+    
+    let ukupnoVisak = 0;
+    duplikatiGrupe.forEach((grupa, gIdx) => {
+        ukupnoVisak += grupa.length - 1;
+        previewHtml += `<div style="margin-bottom:12px;padding:10px;background:white;border-left:3px solid #ffc107;border-radius:4px;">`;
+        previewHtml += `<div style="font-weight:bold;color:#856404;margin-bottom:5px;">Grupa ${gIdx + 1} (${grupa.length} artikala):</div>`;
+        grupa.forEach((item, i) => {
+            const a = item.artikal;
+            const oznaka = i === 0 ? '<span style="color:#28a745;font-weight:bold;">✅ ZADRŽI</span>' : '<span style="color:#dc3545;font-weight:bold;">🗑 OBRIŠI</span>';
+            previewHtml += `<div style="padding:3px 0;font-size:13px;">${oznaka} &nbsp; "${a.naziv}" — ${(a.cijena || 0).toFixed(3)} €</div>`;
+        });
+        previewHtml += '</div>';
+    });
+    previewHtml += '</div>';
+    previewHtml += `<p style="margin-top:15px;color:#dc3545;font-weight:bold;">Biće obrisano: ${ukupnoVisak} duplikata. Ostaje: ${originalCount - ukupnoVisak} artikala.</p>`;
+    previewHtml += `<p style="margin-top:8px;font-size:12px;color:#666;">Pravilo: zadržava se <strong>prvi</strong> artikal u grupi (po redu u cjenovniku).</p>`;
+    
+    // Prikaži kao modal
+    const modalId = 'duplikatiPreviewModal';
+    let existingModal = document.getElementById(modalId);
+    if (existingModal) existingModal.remove();
+    
+    const modalHtml = `
+        <div id="${modalId}" class="modal active" onclick="if(event.target.id==='${modalId}') this.remove()">
+            <div class="modal-content" style="max-width:700px;">
+                <div class="modal-header">
+                    <h3>🧹 Čišćenje duplikata</h3>
+                    <button onclick="document.getElementById('${modalId}').remove()" style="font-size:24px;background:none;border:none;">&times;</button>
+                </div>
+                ${previewHtml}
+                <div style="display:flex;gap:10px;margin-top:15px;">
+                    <button onclick="document.getElementById('${modalId}').remove()" class="btn btn-secondary" style="flex:1;padding:12px;">❌ Otkaži</button>
+                    <button onclick="potvrdiBrisanjeDuplikata()" class="btn btn-danger" style="flex:1;padding:12px;">🗑 Obriši ${ukupnoVisak} duplikata</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // Sačuvaj grupe globalno za brisanje
+    window._duplikatiGrupe = duplikatiGrupe;
+}
+
+async function potvrdiBrisanjeDuplikata() {
+    if (!window._duplikatiGrupe) return;
+    
+    // Skupi indekse za brisanje (sve osim prvog u svakoj grupi)
+    const indeksiZaBrisanje = [];
+    window._duplikatiGrupe.forEach(grupa => {
+        for (let i = 1; i < grupa.length; i++) {
+            indeksiZaBrisanje.push(grupa[i].originalIndex);
+        }
+    });
+    
+    // Obriši od najvećeg indeksa ka manjem (da ne poremetimo indekse)
+    indeksiZaBrisanje.sort((a, b) => b - a);
+    indeksiZaBrisanje.forEach(idx => {
+        data.cjenovnik.splice(idx, 1);
+    });
+    
+    await saveToCloud();
+    renderCjenovnik();
+    
+    // Zatvori modal
+    const modal = document.getElementById('duplikatiPreviewModal');
+    if (modal) modal.remove();
+    window._duplikatiGrupe = null;
+    
+    alert(`✅ Obrisano ${indeksiZaBrisanje.length} duplikata!\n\nUkupno u cjenovniku sada: ${data.cjenovnik.length}`);
+}
+
 // ==================== MENADŽER ====================
 function showManager() {
-    // popuni listu lokala
     const sel = document.getElementById('managerLokal');
     sel.innerHTML = data.lokali.map(l => `<option value="${l.id}">${l.naziv}</option>`).join('');
     if (aktivniLokalId) sel.value = aktivniLokalId;
