@@ -35,11 +35,36 @@
         .btn-info { background: #17a2b8; }
         .btn-danger { background: #dc3545; }
         .btn-warning { background: #ffc107; color: black; }
+        .btn-secondary { background: #6c757d; }
         .btn-sm { padding: 4px 8px; font-size: 12px; }
 
         .sync-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
         .sync-online { background: #28a745; }
         .sync-offline { background: #dc3545; }
+
+        /* LOKALI */
+        .lokali-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .lokal-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; position: relative; border-left: 5px solid #667eea; }
+        .lokal-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.15); transform: translateY(-2px); }
+        .lokal-card.active { background: #eef2ff; border-left-color: #28a745; }
+        .lokal-card h3 { font-size: 20px; margin-bottom: 8px; }
+        .lokal-card .lokal-stats { font-size: 13px; color: #666; margin-top: 10px; }
+        .lokal-card .lokal-actions { position: absolute; top: 10px; right: 10px; }
+
+        /* FOLDERI */
+        .folderi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+        .folder-card { background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; border-top: 5px solid #667eea; text-align: center; }
+        .folder-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.15); transform: translateY(-2px); }
+        .folder-icon { font-size: 3rem; margin-bottom: 10px; }
+        .folder-card h3 { font-size: 22px; margin-bottom: 8px; }
+        .folder-card .folder-stats { font-size: 13px; color: #666; }
+        .folder-card .folder-ukupno { font-size: 18px; font-weight: bold; margin-top: 8px; }
+
+        .breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; font-size: 15px; flex-wrap: wrap; }
+        .breadcrumb a { color: #667eea; text-decoration: none; cursor: pointer; font-weight: bold; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        .breadcrumb .sep { color: #999; }
+        .breadcrumb .current { color: #333; font-weight: bold; }
 
         .popis-card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 5px rgba(0,0,0,0.1); cursor: pointer; }
         .popis-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
@@ -116,10 +141,26 @@
     <div class="container"><div id="mainContent"></div></div>
 </div>
 
+<!-- MODAL ZA NOVI LOKAL -->
+<div id="noviLokalModal" class="modal">
+    <div class="modal-content" style="max-width:500px;">
+        <div class="modal-header"><h3 id="lokalModalTitle">Novi lokal</h3><button onclick="closeModal('noviLokalModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="form-group">
+            <label>Naziv lokala:</label>
+            <input type="text" id="lokalNaziv" class="search-input" placeholder="npr. Restoran Centar">
+        </div>
+        <button onclick="sacuvajLokal()" class="btn btn-success" style="width:100%;padding:12px;">💾 Sačuvaj</button>
+    </div>
+</div>
+
 <!-- MODAL ZA NOVI POPIS -->
 <div id="noviPopisModal" class="modal">
     <div class="modal-content">
         <div class="modal-header"><h3>📅 Novi popis</h3><button onclick="closeModal('noviPopisModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="form-group">
+            <label>Lokal:</label>
+            <select id="noviLokal" class="search-input"></select>
+        </div>
         <div class="form-group">
             <label>Mesec:</label>
             <select id="noviMesec" class="search-input"></select>
@@ -158,7 +199,7 @@
 <!-- MODAL ZA CJENOVNIK -->
 <div id="cjenovnikModal" class="modal">
     <div class="modal-content">
-        <div class="modal-header"><h3>📋 Cjenovnik</h3><button onclick="closeModal('cjenovnikModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3>📋 Cjenovnik (zajednički za sve lokale)</h3><button onclick="closeModal('cjenovnikModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
             <button onclick="showDodajArtikal()" class="btn btn-success">+ Dodaj artikal</button>
             <button onclick="document.getElementById('cjenovnikUpload').click()" class="btn btn-info">📂 Upload cjenovnik</button>
@@ -248,6 +289,7 @@
     <div class="modal-content">
         <div class="modal-header"><h3>👨‍💼 Menadžer</h3><button onclick="closeModal('managerModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
+            <select id="managerLokal" onchange="renderManager()" class="search-input" style="flex:1;"></select>
             <select id="managerGodina" onchange="renderManager()" class="search-input" style="flex:1;">
                 <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option>
             </select>
@@ -279,13 +321,24 @@ const SUPABASE_ANON_KEY = 'sb_publishable_nbUWlCIXbB48NoBRhH4ucg_PfCAmau1';
 let supabaseClient = null;
 try { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
 
-let data = { cjenovnik: [], popisi: [] };
+// data struktura:
+// { cjenovnik: [], lokali: [ { id, naziv, popisi: [ { mesec, godina, sektor, artikli, datumKreiranja } ] } ] }
+let data = { cjenovnik: [], lokali: [] };
 let trenutniPopis = null;
 let editingArtikalIndex = null;
+let editingLokalId = null;
+
+// navigacija
+let aktivniLokalId = null;   // null = prikaz svih lokala
+let aktivniSektor = null;    // null = prikaz foldera u lokalu
+
+// reference na trenutno prikazan popis
+let prikazanLokalId = null;
 let prikazanPopisIndex = null;
 let editingPopisArtikalIndex = null;
 
 const MESECI = ['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
+const SEKTORI = ['ŠANK', 'KUHINJA'];
 
 // ==================== SUPABASE ====================
 function updateSyncStatus(online) {
@@ -294,12 +347,18 @@ function updateSyncStatus(online) {
 }
 
 async function loadFromCloud() {
-    if (!supabaseClient) { loadLocal(); updateSyncStatus(false); return; }
+    if (!supabaseClient) { loadLocal(); migrateData(); updateSyncStatus(false); return; }
     try {
         const { data: result, error } = await supabaseClient.from('popis_data').select('*').eq('id', 1).single();
-        if (result) { data = result.podaci || { cjenovnik: [], popisi: [] }; updateSyncStatus(true); }
-        else if (error) { await supabaseClient.from('popis_data').upsert({ id: 1, podaci: data }); updateSyncStatus(true); }
-    } catch(e) { loadLocal(); updateSyncStatus(false); }
+        if (result) {
+            data = result.podaci || { cjenovnik: [], lokali: [] };
+            migrateData();
+            updateSyncStatus(true);
+        } else if (error) {
+            await supabaseClient.from('popis_data').upsert({ id: 1, podaci: data });
+            updateSyncStatus(true);
+        }
+    } catch(e) { loadLocal(); migrateData(); updateSyncStatus(false); }
 }
 
 async function saveToCloud() {
@@ -308,8 +367,46 @@ async function saveToCloud() {
     try { await supabaseClient.from('popis_data').upsert({ id: 1, podaci: data }); updateSyncStatus(true); } catch(e) { updateSyncStatus(false); }
 }
 
-function loadLocal() { const s = localStorage.getItem('popis_data'); if (s) data = JSON.parse(s); }
+function loadLocal() { 
+    const s = localStorage.getItem('popis_data'); 
+    if (s) data = JSON.parse(s); 
+}
 function saveLocal() { localStorage.setItem('popis_data', JSON.stringify(data)); }
+
+// Migracija starih podataka (popisi na vrhu) u novu strukturu sa lokalima
+function migrateData() {
+    if (!data) data = { cjenovnik: [], lokali: [] };
+    if (!data.cjenovnik) data.cjenovnik = [];
+    
+    // stara struktura: data.popisi
+    if (data.popisi && data.popisi.length > 0) {
+        const stariPopisi = data.popisi;
+        if (!data.lokali) data.lokali = [];
+        
+        // Nađi ili napravi "Lokal 1"
+        let lokal1 = data.lokali.find(l => l.naziv === 'Lokal 1');
+        if (!lokal1) {
+            lokal1 = { id: generisiId(), naziv: 'Lokal 1', popisi: [] };
+            data.lokali.push(lokal1);
+        }
+        
+        // Premjesti sve popise u Lokal 1
+        stariPopisi.forEach(p => {
+            lokal1.popisi.push({
+                mesec: p.mesec, godina: p.godina, sektor: p.sektor,
+                artikli: p.artikli || [], datumKreiranja: p.datumKreiranja || new Date().toLocaleString('hr')
+            });
+        });
+        
+        delete data.popisi;
+    }
+    
+    if (!data.lokali) data.lokali = [];
+}
+
+function generisiId() {
+    return 'l_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+}
 
 // ==================== HELPERS ====================
 function normalize(str) {
@@ -379,6 +476,25 @@ function bojaVrijednosti(v) {
     return '#666';
 }
 
+function getLokal(id) { return data.lokali.find(l => l.id === id); }
+
+function izracunajUkupnoPopis(p) {
+    let uk = 0;
+    (p.artikli || []).forEach(a => {
+        const kol = (a.visak || 0) - (a.manjak || 0);
+        uk += kol * (a.cijena || 0);
+    });
+    return uk;
+}
+
+function izracunajUkupnoLokalSektor(lokal, sektor) {
+    let uk = 0;
+    (lokal.popisi || []).filter(p => p.sektor === sektor).forEach(p => {
+        uk += izracunajUkupnoPopis(p);
+    });
+    return uk;
+}
+
 // ==================== INIT ====================
 document.getElementById('loginBtn').onclick = async () => {
     if (document.getElementById('passwordInput').value === '123') {
@@ -401,32 +517,133 @@ document.getElementById('logoutBtn').onclick = () => {
 // ==================== GLAVNI EKRAN ====================
 function renderMain() {
     const c = document.getElementById('mainContent');
-    if (data.popisi.length === 0) {
-        c.innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Nema popisa. Kliknite "+ Novi popis".</p>';
+    
+    if (aktivniLokalId === null) {
+        // PRIKAZ SVIH LOKALA
+        renderLokali();
+    } else if (aktivniSektor === null) {
+        // PRIKAZ FOLDERA (ŠANK, KUHINJA) unutar lokala
+        renderFolderi();
+    } else {
+        // PRIKAZ POPISA unutar sektora
+        renderPopisiSektora();
+    }
+}
+
+// --- NIVO 1: LOKALI ---
+function renderLokali() {
+    const c = document.getElementById('mainContent');
+    let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px;">';
+    html += '<h2>🏢 Lokali</h2>';
+    html += '<button onclick="showNoviLokal()" class="btn btn-success">+ Novi lokal</button>';
+    html += '</div>';
+    
+    if (data.lokali.length === 0) {
+        html += '<p style="text-align:center;color:#999;padding:40px;">Nema lokala. Kliknite "+ Novi lokal".</p>';
+        c.innerHTML = html;
         return;
     }
-    let html = '<h2 style="margin-bottom:15px;">📋 Popisi</h2>';
-    const sorted = [...data.popisi].sort((a, b) => {
+    
+    html += '<div class="lokali-grid">';
+    data.lokali.forEach(lokal => {
+        const brPopisa = (lokal.popisi || []).length;
+        const ukupno = (lokal.popisi || []).reduce((s, p) => s + izracunajUkupnoPopis(p), 0);
+        const brSank = (lokal.popisi || []).filter(p => p.sektor === 'ŠANK').length;
+        const brKuhinja = (lokal.popisi || []).filter(p => p.sektor === 'KUHINJA').length;
+        
+        html += `
+            <div class="lokal-card" onclick="otvoriLokal('${lokal.id}')">
+                <div class="lokal-actions" onclick="event.stopPropagation()">
+                    <button class="btn btn-sm btn-info" onclick="urediLokal('${lokal.id}')">✏️</button>
+                    <button class="btn btn-sm btn-danger" onclick="obrisiLokal('${lokal.id}')">🗑</button>
+                </div>
+                <h3>🏢 ${lokal.naziv}</h3>
+                <div class="lokal-stats">
+                    📊 ${brPopisa} popisa ukupno<br>
+                    🍺 ŠANK: ${brSank} | 🍳 KUHINJA: ${brKuhinja}
+                </div>
+                <div class="folder-ukupno" style="color:${bojaVrijednosti(ukupno)};">${ukupno.toFixed(2)} €</div>
+            </div>`;
+    });
+    html += '</div>';
+    c.innerHTML = html;
+}
+
+// --- NIVO 2: FOLDERI (ŠANK, KUHINJA) ---
+function renderFolderi() {
+    const c = document.getElementById('mainContent');
+    const lokal = getLokal(aktivniLokalId);
+    if (!lokal) { aktivniLokalId = null; renderMain(); return; }
+    
+    let html = '<div class="breadcrumb">';
+    html += `<a onclick="idiNaLokale()">🏢 Lokali</a><span class="sep">›</span><span class="current">${lokal.naziv}</span>`;
+    html += '</div>';
+    
+    html += '<div class="folderi-grid">';
+    SEKTORI.forEach(sektor => {
+        const popisiSektora = (lokal.popisi || []).filter(p => p.sektor === sektor);
+        const ukupno = izracunajUkupnoLokalSektor(lokal, sektor);
+        const ikona = sektor === 'ŠANK' ? '🍺' : '🍳';
+        const boja = sektor === 'ŠANK' ? '#17a2b8' : '#ff9800';
+        
+        html += `
+            <div class="folder-card" style="border-top-color:${boja};" onclick="otvoriSektor('${sektor}')">
+                <div class="folder-icon">${ikona}</div>
+                <h3 style="color:${boja};">${sektor}</h3>
+                <div class="folder-stats">📋 ${popisiSektora.length} popisa</div>
+                <div class="folder-ukupno" style="color:${bojaVrijednosti(ukupno)};">${ukupno.toFixed(2)} €</div>
+            </div>`;
+    });
+    html += '</div>';
+    c.innerHTML = html;
+}
+
+// --- NIVO 3: POPISI UNUTAR SEKTORA ---
+function renderPopisiSektora() {
+    const c = document.getElementById('mainContent');
+    const lokal = getLokal(aktivniLokalId);
+    if (!lokal) { aktivniLokalId = null; renderMain(); return; }
+    
+    let html = '<div class="breadcrumb">';
+    html += `<a onclick="idiNaLokale()">🏢 Lokali</a><span class="sep">›</span>`;
+    html += `<a onclick="idiNaFoldere()">${lokal.naziv}</a><span class="sep">›</span>`;
+    html += `<span class="current">${aktivniSektor}</span>`;
+    html += '</div>';
+    
+    const ikona = aktivniSektor === 'ŠANK' ? '🍺' : '🍳';
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px;">`;
+    html += `<h2>${ikona} ${aktivniSektor} — ${lokal.naziv}</h2>`;
+    html += `<button onclick="showNoviPopisZaSektor('${aktivniSektor}')" class="btn btn-success">+ Novi popis</button>`;
+    html += `</div>`;
+    
+    const popisi = (lokal.popisi || []).filter(p => p.sektor === aktivniSektor);
+    
+    if (popisi.length === 0) {
+        html += '<p style="text-align:center;color:#999;padding:40px;">Nema popisa u ovom sektoru.</p>';
+        c.innerHTML = html;
+        return;
+    }
+    
+    // sortiraj po datumu (najnoviji prvi)
+    const sorted = [...popisi].sort((a, b) => {
         if (a.godina !== b.godina) return b.godina - a.godina;
         return b.mesec - a.mesec;
     });
+    
     sorted.forEach(p => {
-        let ukupnoManjak = 0;
-        (p.artikli || []).forEach(a => { 
-            const kol = (a.visak || 0) - (a.manjak || 0);
-            ukupnoManjak += kol * (a.cijena || 0); 
-        });
-        const originalIndex = data.popisi.indexOf(p);
+        const ukupno = izracunajUkupnoPopis(p);
+        // nađi originalni index u lokal.popisi
+        const origIndex = lokal.popisi.indexOf(p);
         html += `
-            <div class="popis-card" onclick="prikaziPopis(${originalIndex})">
+            <div class="popis-card" onclick="prikaziPopis('${lokal.id}', ${origIndex})">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                     <div>
-                        <h3 style="font-size:18px;">📅 ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}</h3>
+                        <h3 style="font-size:18px;">📅 ${MESECI[p.mesec]} ${p.godina}</h3>
                         <span style="font-size:13px;color:#666;">${(p.artikli || []).length} artikala</span>
                     </div>
                     <div style="text-align:right;">
-                        <div style="font-size:20px;font-weight:bold;color:${bojaVrijednosti(ukupnoManjak)};">${ukupnoManjak.toFixed(2)} €</div>
-                        <span style="font-size:11px;color:#666;">${ukupnoManjak < 0 ? 'Manjak' : (ukupnoManjak > 0 ? 'Višak' : 'Poklapa se')}</span>
+                        <div style="font-size:20px;font-weight:bold;color:${bojaVrijednosti(ukupno)};">${ukupno.toFixed(2)} €</div>
+                        <span style="font-size:11px;color:#666;">${ukupno < 0 ? 'Manjak' : (ukupno > 0 ? 'Višak' : 'Poklapa se')}</span>
                     </div>
                 </div>
             </div>`;
@@ -434,13 +651,98 @@ function renderMain() {
     c.innerHTML = html;
 }
 
+function idiNaLokale() {
+    aktivniLokalId = null;
+    aktivniSektor = null;
+    renderMain();
+}
+
+function idiNaFoldere() {
+    aktivniSektor = null;
+    renderMain();
+}
+
+function otvoriLokal(id) {
+    aktivniLokalId = id;
+    aktivniSektor = null;
+    renderMain();
+}
+
+function otvoriSektor(sektor) {
+    aktivniSektor = sektor;
+    renderMain();
+}
+
+// ==================== LOKALI CRUD ====================
+function showNoviLokal() {
+    editingLokalId = null;
+    document.getElementById('lokalModalTitle').textContent = 'Novi lokal';
+    document.getElementById('lokalNaziv').value = '';
+    showModal('noviLokalModal');
+}
+
+function urediLokal(id) {
+    const lokal = getLokal(id);
+    if (!lokal) return;
+    editingLokalId = id;
+    document.getElementById('lokalModalTitle').textContent = 'Uredi lokal';
+    document.getElementById('lokalNaziv').value = lokal.naziv;
+    showModal('noviLokalModal');
+}
+
+async function sacuvajLokal() {
+    const naziv = document.getElementById('lokalNaziv').value.trim();
+    if (!naziv) { alert('Unesite naziv!'); return; }
+    
+    if (editingLokalId) {
+        const lokal = getLokal(editingLokalId);
+        if (lokal) lokal.naziv = naziv;
+    } else {
+        data.lokali.push({ id: generisiId(), naziv, popisi: [] });
+    }
+    
+    await saveToCloud();
+    closeModal('noviLokalModal');
+    renderMain();
+}
+
+async function obrisiLokal(id) {
+    const lokal = getLokal(id);
+    if (!lokal) return;
+    if (!confirm(`⚠️ Obrisati lokal "${lokal.naziv}" i sve njegove popise?`)) return;
+    data.lokali = data.lokali.filter(l => l.id !== id);
+    await saveToCloud();
+    if (aktivniLokalId === id) { aktivniLokalId = null; aktivniSektor = null; }
+    renderMain();
+}
+
 // ==================== NOVI POPIS ====================
 function showNoviPopis() {
+    if (data.lokali.length === 0) {
+        alert('⚠️ Prvo napravite lokal!');
+        showNoviLokal();
+        return;
+    }
+    
     trenutniPopis = null;
     document.getElementById('excelInput').value = '';
     document.getElementById('previewNovi').innerHTML = '';
     document.getElementById('dugmadNovi').style.display = 'none';
+    
+    // popuni padajuću listu lokala
+    const selLokal = document.getElementById('noviLokal');
+    selLokal.innerHTML = data.lokali.map(l => `<option value="${l.id}">${l.naziv}</option>`).join('');
+    
+    // ako smo u lokalu, postavi ga kao default
+    if (aktivniLokalId) selLokal.value = aktivniLokalId;
+    if (aktivniSektor) document.getElementById('noviSektor').value = aktivniSektor;
+    
     showModal('noviPopisModal');
+}
+
+function showNoviPopisZaSektor(sektor) {
+    showNoviPopis();
+    document.getElementById('noviSektor').value = sektor;
 }
 
 function ucitajExcel(event) {
@@ -625,17 +927,21 @@ async function sacuvajNoviPopis() {
         if (!confirm(`⚠️ ${bezCijene.length} artikala bez cijene. Sačuvati svejedno?`)) return;
     }
     
+    const lokalId = document.getElementById('noviLokal').value;
     const mesec = parseInt(document.getElementById('noviMesec').value);
     const godina = parseInt(document.getElementById('noviGodina').value);
     const sektor = document.getElementById('noviSektor').value;
     
-    const exists = data.popisi.find(p => p.mesec === mesec && p.godina === godina && p.sektor === sektor);
+    const lokal = getLokal(lokalId);
+    if (!lokal) { alert('❌ Lokal nije pronađen!'); return; }
+    
+    const exists = lokal.popisi.find(p => p.mesec === mesec && p.godina === godina && p.sektor === sektor);
     if (exists) {
-        if (!confirm('⚠️ Postoji. Prepisati?')) return;
-        data.popisi.splice(data.popisi.indexOf(exists), 1);
+        if (!confirm('⚠️ Popis za taj mesec/sektor već postoji u ovom lokalu. Prepisati?')) return;
+        lokal.popisi.splice(lokal.popisi.indexOf(exists), 1);
     }
     
-    data.popisi.push({
+    lokal.popisi.push({
         mesec, godina, sektor,
         artikli: trenutniPopis.artikli,
         datumKreiranja: new Date().toLocaleString('hr')
@@ -650,16 +956,23 @@ async function sacuvajNoviPopis() {
 }
 
 // ==================== PRIKAZ POPISA ====================
-function prikaziPopis(index) {
-    const p = data.popisi[index];
+function prikaziPopis(lokalId, index) {
+    const lokal = getLokal(lokalId);
+    if (!lokal) return;
+    const p = lokal.popisi[index];
+    if (!p) return;
+    
+    prikazanLokalId = lokalId;
     prikazanPopisIndex = index;
-    document.getElementById('popisTitle').textContent = `📅 ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}`;
+    
+    document.getElementById('popisTitle').textContent = `📅 ${MESECI[p.mesec]} ${p.godina} - ${p.sektor} (${lokal.naziv})`;
     renderPopisContent();
     showModal('popisModal');
 }
 
 function renderPopisContent() {
-    const p = data.popisi[prikazanPopisIndex];
+    const lokal = getLokal(prikazanLokalId);
+    const p = lokal.popisi[prikazanPopisIndex];
     const c = document.getElementById('popisContent');
     let html = '<table class="artikal-table"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena €</th><th>VRIJEDNOST €</th><th class="no-print">Akcije</th></tr></thead><tbody>';
     
@@ -690,9 +1003,10 @@ function renderPopisContent() {
 }
 
 function urediPopisArtikal(index) {
-    if (prikazanPopisIndex === null) return;
+    if (prikazanLokalId === null || prikazanPopisIndex === null) return;
+    const lokal = getLokal(prikazanLokalId);
+    const a = lokal.popisi[prikazanPopisIndex].artikli[index];
     editingPopisArtikalIndex = index;
-    const a = data.popisi[prikazanPopisIndex].artikli[index];
     document.getElementById('editPopisNaziv').value = a.naziv || '';
     document.getElementById('editPopisJM').value = a.jm || 'KOM.';
     document.getElementById('editPopisManjak').value = a.manjak || 0;
@@ -702,8 +1016,9 @@ function urediPopisArtikal(index) {
 }
 
 async function sacuvajEditPopisArtikal() {
-    if (prikazanPopisIndex === null || editingPopisArtikalIndex === null) return;
-    const a = data.popisi[prikazanPopisIndex].artikli[editingPopisArtikalIndex];
+    if (prikazanLokalId === null || prikazanPopisIndex === null || editingPopisArtikalIndex === null) return;
+    const lokal = getLokal(prikazanLokalId);
+    const a = lokal.popisi[prikazanPopisIndex].artikli[editingPopisArtikalIndex];
     
     a.naziv = document.getElementById('editPopisNaziv').value.trim();
     a.jm = document.getElementById('editPopisJM').value;
@@ -721,31 +1036,35 @@ async function sacuvajEditPopisArtikal() {
 }
 
 async function obrisiPopisArtikal(index) {
-    if (prikazanPopisIndex === null) return;
+    if (prikazanLokalId === null || prikazanPopisIndex === null) return;
     if (!confirm('Obrisati artikal iz popisa?')) return;
-    data.popisi[prikazanPopisIndex].artikli.splice(index, 1);
+    const lokal = getLokal(prikazanLokalId);
+    lokal.popisi[prikazanPopisIndex].artikli.splice(index, 1);
     await saveToCloud();
     renderPopisContent();
     renderMain();
 }
 
 async function obrisiPopis() {
-    if (prikazanPopisIndex === null) return;
+    if (prikazanLokalId === null || prikazanPopisIndex === null) return;
     if (!confirm('⚠️ Obrisati popis?')) return;
-    data.popisi.splice(prikazanPopisIndex, 1);
+    const lokal = getLokal(prikazanLokalId);
+    lokal.popisi.splice(prikazanPopisIndex, 1);
     await saveToCloud();
     closeModal('popisModal');
+    prikazanLokalId = null;
     prikazanPopisIndex = null;
     renderMain();
 }
 
 // ==================== EXPORT POPISA U EXCEL ====================
 function exportPopisExcel() {
-    if (prikazanPopisIndex === null) return;
-    const p = data.popisi[prikazanPopisIndex];
+    if (prikazanLokalId === null || prikazanPopisIndex === null) return;
+    const lokal = getLokal(prikazanLokalId);
+    const p = lokal.popisi[prikazanPopisIndex];
     
     const rows = [];
-    rows.push([`POPIS - ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}`]);
+    rows.push([`POPIS - ${lokal.naziv} - ${MESECI[p.mesec]} ${p.godina} - ${p.sektor}`]);
     rows.push([]);
     rows.push(['Naziv', 'J.M.', 'Manjak', 'Višak', 'Konačno', 'Cijena €', 'Vrijednost €']);
     
@@ -768,16 +1087,18 @@ function exportPopisExcel() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Popis');
     
-    const naziv = `Popis_${MESECI[p.mesec]}_${p.godina}_${p.sektor}.xlsx`;
+    const naziv = `Popis_${lokal.naziv}_${MESECI[p.mesec]}_${p.godina}_${p.sektor}.xlsx`;
     XLSX.writeFile(wb, naziv);
 }
 
 // ==================== EXPORT POPISA U PDF ====================
 function exportPopisPDF() {
-    if (prikazanPopisIndex === null) return;
-    const p = data.popisi[prikazanPopisIndex];
+    if (prikazanLokalId === null || prikazanPopisIndex === null) return;
+    const lokal = getLokal(prikazanLokalId);
+    const p = lokal.popisi[prikazanPopisIndex];
     
     let html = `<h2 style="text-align:center;margin-bottom:5px;">POPIS</h2>`;
+    html += `<h3 style="text-align:center;margin-bottom:5px;">${lokal.naziv}</h3>`;
     html += `<h3 style="text-align:center;margin-bottom:15px;">${MESECI[p.mesec].toUpperCase()} ${p.godina} - ${p.sektor}</h3>`;
     html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
     html += '<tr style="background:#f0f0f0;"><th style="border:1px solid #000;padding:5px;text-align:left;">Naziv</th><th style="border:1px solid #000;padding:5px;">J.M.</th><th style="border:1px solid #000;padding:5px;">Manjak</th><th style="border:1px solid #000;padding:5px;">Višak</th><th style="border:1px solid #000;padding:5px;">Konačno</th><th style="border:1px solid #000;padding:5px;">Cijena €</th><th style="border:1px solid #000;padding:5px;">Vrijednost €</th></tr>';
@@ -951,19 +1272,28 @@ function ucitajCjenovnik(event) {
 
 // ==================== MENADŽER ====================
 function showManager() {
+    // popuni listu lokala
+    const sel = document.getElementById('managerLokal');
+    sel.innerHTML = data.lokali.map(l => `<option value="${l.id}">${l.naziv}</option>`).join('');
+    if (aktivniLokalId) sel.value = aktivniLokalId;
     document.getElementById('managerGodina').value = new Date().getFullYear();
+    if (aktivniSektor) document.getElementById('managerSektor').value = aktivniSektor;
     renderManager();
     showModal('managerModal');
 }
 
 function renderManager() {
+    const lokalId = document.getElementById('managerLokal').value;
     const godina = parseInt(document.getElementById('managerGodina').value);
     const sektor = document.getElementById('managerSektor').value;
     const c = document.getElementById('managerContent');
     
-    const popisi = data.popisi.filter(p => p.godina === godina && p.sektor === sektor).sort((a, b) => a.mesec - b.mesec);
+    const lokal = getLokal(lokalId);
+    if (!lokal) { c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Odaberite lokal.</p>'; return; }
+    
+    const popisi = lokal.popisi.filter(p => p.godina === godina && p.sektor === sektor).sort((a, b) => a.mesec - b.mesec);
     if (popisi.length === 0) {
-        c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema popisa.</p>';
+        c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema popisa za odabrani lokal/godinu/sektor.</p>';
         return;
     }
     
@@ -971,7 +1301,8 @@ function renderManager() {
     popisi.forEach(p => (p.artikli || []).forEach(a => artikliSet.add(a.naziv)));
     const artikli = Array.from(artikliSet).sort();
     
-    let html = '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr><th style="min-width:180px;">Artikal</th>';
+    let html = `<h3 style="margin-bottom:10px;">${lokal.naziv} — ${sektor} — ${godina}</h3>`;
+    html += '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr><th style="min-width:180px;">Artikal</th>';
     popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>€</small></th>`; });
     html += '<th>UKUPNO</th></tr></thead><tbody>';
     
@@ -1007,10 +1338,12 @@ function renderManager() {
 
 // ==================== ŠTAMPANJE ====================
 function stampajPopis() {
-    if (prikazanPopisIndex === null) return;
-    const p = data.popisi[prikazanPopisIndex];
+    if (prikazanLokalId === null || prikazanPopisIndex === null) return;
+    const lokal = getLokal(prikazanLokalId);
+    const p = lokal.popisi[prikazanPopisIndex];
     
-    let pc = `<h2 style="text-align:center;">${MESECI[p.mesec].toUpperCase()} ${p.godina} - ${p.sektor}</h2>`;
+    let pc = `<h2 style="text-align:center;">${lokal.naziv}</h2>`;
+    pc += `<h3 style="text-align:center;">${MESECI[p.mesec].toUpperCase()} ${p.godina} - ${p.sektor}</h3>`;
     pc += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:15px;">';
     pc += '<tr style="background:#f0f0f0;"><th style="border:1px solid #000;padding:6px;text-align:left;">Naziv</th><th style="border:1px solid #000;padding:6px;">J.M.</th><th style="border:1px solid #000;padding:6px;">Manjak</th><th style="border:1px solid #000;padding:6px;">Višak</th><th style="border:1px solid #000;padding:6px;">Konačno</th><th style="border:1px solid #000;padding:6px;">VRIJEDNOST</th></tr>';
     
@@ -1076,10 +1409,13 @@ function importData() {
         reader.onload = async (event) => {
             try {
                 const imported = JSON.parse(event.target.result);
-                if (imported && (imported.cjenovnik || imported.popisi)) {
+                if (imported && (imported.cjenovnik || imported.lokali || imported.popisi)) {
                     if (confirm('⚠️ Uvoz će PREBRIŠATI podatke. Nastaviti?')) {
                         data = imported;
+                        migrateData();
                         await saveToCloud();
+                        aktivniLokalId = null;
+                        aktivniSektor = null;
                         renderMain();
                         alert('✅ Uvezeno!');
                     }
@@ -1094,10 +1430,12 @@ function importData() {
 async function resetAll() {
     const sifra = prompt('🔒 Šifra za reset:');
     if (sifra === '1978') {
-        if (confirm('⚠️ Resetovati SVE?')) {
+        if (confirm('⚠️ Resetovati SVE (sve lokale, popise i cjenovnik)?')) {
             localStorage.removeItem('popis_data');
-            data = { cjenovnik: [], popisi: [] };
+            data = { cjenovnik: [], lokali: [] };
             await saveToCloud();
+            aktivniLokalId = null;
+            aktivniSektor = null;
             renderMain();
             alert('✅ Resetovano!');
         }
