@@ -47,9 +47,11 @@
         .lokal-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; position: relative; border-left: 5px solid #667eea; }
         .lokal-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.15); transform: translateY(-2px); }
         .lokal-card.active { background: #eef2ff; border-left-color: #28a745; }
-        .lokal-card h3 { font-size: 20px; margin-bottom: 8px; }
+        .lokal-card.zakljucan { border-left-color: #ffc107; }
+        .lokal-card h3 { font-size: 20px; margin-bottom: 8px; padding-right: 100px; }
         .lokal-card .lokal-stats { font-size: 13px; color: #666; margin-top: 10px; }
-        .lokal-card .lokal-actions { position: absolute; top: 10px; right: 10px; }
+        .lokal-card .lokal-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 3px; }
+        .lokal-lock-badge { display: inline-block; font-size: 11px; background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
 
         .folderi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
         .folder-card { background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; border-top: 5px solid #667eea; text-align: center; }
@@ -78,16 +80,19 @@
         .artikal-table .total-row { background: #fff3cd; font-weight: bold; font-size: 15px; }
         .artikal-table .red-bez-cijene { background: #ffe5e5; }
         .artikal-table .red-bez-cijene:hover { background: #ffd5d5; }
-        .artikal-table .red-mapirano { background: #e8f5e9; }
-        .artikal-table .red-mapirano:hover { background: #d4edda; }
         .cijena-input { width: 80px; padding: 6px; border: 2px solid #dc3545; border-radius: 4px; font-size: 14px; font-weight: bold; text-align: right; }
         .cijena-input:focus { border-color: #667eea; outline: none; background: #eef2ff; }
         .cijena-ok { color: #28a745; font-weight: bold; text-align: right; }
         .btn-povezi { padding: 4px 8px; font-size: 11px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 4px; }
         .btn-povezi:hover { background: #5a349f; }
 
-        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; padding: 10px; }
         .modal.active { display: flex; }
+        #poveziModal { z-index: 1100; }
+        #editPopisArtikalModal { z-index: 1200; }
+        #duplikatiPreviewModal { z-index: 1300; }
+        #sifraModal { z-index: 1400; }
+
         .modal-content { background: white; padding: 25px; border-radius: 10px; max-width: 1200px; width: 95%; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .search-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px; font-size: 16px; }
@@ -119,6 +124,33 @@
             .no-print { display: none !important; }
             .artikal-table { font-size: 11px !important; }
             .artikal-table th, .artikal-table td { padding: 4px !important; }
+        }
+
+        /* MOBILNI */
+        @media (max-width: 768px) {
+            .container { min-width: unset; padding: 10px; }
+            .modal { padding: 0; align-items: flex-start; }
+            .modal-content { 
+                width: 100% !important; 
+                max-width: 100% !important; 
+                max-height: 100vh !important; 
+                height: 100vh;
+                border-radius: 0 !important; 
+                padding: 15px !important;
+            }
+            .modal-header h3 { font-size: 18px; }
+            .btn { padding: 12px 18px; font-size: 14px; }
+            .btn-sm { padding: 8px 12px; font-size: 13px; }
+            .btn-povezi { padding: 10px 14px; font-size: 14px; }
+            .povezi-item { padding: 14px 10px; }
+            .povezi-item .naziv { font-size: 15px; }
+            .povezi-item .cijena { font-size: 16px; }
+            .artikal-table th, .artikal-table td { padding: 8px 6px; font-size: 13px; }
+            .cijena-input { width: 80px; padding: 8px; }
+            .search-input { font-size: 16px; padding: 12px; }
+            .header-content h1 { font-size: 20px; }
+            .lokali-grid, .folderi-grid { grid-template-columns: 1fr; }
+            .lokal-card h3 { font-size: 18px; padding-right: 80px; }
         }
     </style>
 </head>
@@ -155,22 +187,44 @@
     <div class="container"><div id="mainContent"></div></div>
 </div>
 
-<!-- MODAL ZA NOVI LOKAL -->
+<!-- MODAL ZA NOVI/UREDI LOKAL -->
 <div id="noviLokalModal" class="modal">
     <div class="modal-content" style="max-width:500px;">
-        <div class="modal-header"><h3 id="lokalModalTitle">Novi lokal</h3><button onclick="closeModal('noviLokalModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3 id="lokalModalTitle">Novi lokal</h3><button onclick="closeModal('noviLokalModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div class="form-group">
             <label>Naziv lokala:</label>
             <input type="text" id="lokalNaziv" class="search-input" placeholder="npr. Restoran Centar">
         </div>
+        <div class="form-group">
+            <label>Šifra za zaključavanje (opcionalno — ostavi prazno = bez zaštite):</label>
+            <input type="text" id="lokalSifra" class="search-input" placeholder="npr. 1234" autocomplete="off">
+            <div style="font-size:12px;color:#666;margin-top:4px;">Ako postaviš šifru, lokal se zaključava — bez šifre ne možeš ući, urediti ni obrisati.</div>
+        </div>
+        <div id="lokalSifraInfo" style="margin-bottom:12px;"></div>
         <button onclick="sacuvajLokal()" class="btn btn-success" style="width:100%;padding:12px;">💾 Sačuvaj</button>
+    </div>
+</div>
+
+<!-- MODAL ZA UNOS ŠIFRE -->
+<div id="sifraModal" class="modal">
+    <div class="modal-content" style="max-width:450px;">
+        <div class="modal-header"><h3 id="sifraModalTitle">🔒 Unesi šifru</h3><button onclick="closeModal('sifraModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
+        <div id="sifraModalInfo" style="margin-bottom:12px;"></div>
+        <div class="form-group">
+            <label>Šifra lokala:</label>
+            <input type="password" id="sifraUnos" class="search-input" placeholder="Unesi šifru" autocomplete="off">
+        </div>
+        <div style="display:flex;gap:10px;">
+            <button onclick="closeModal('sifraModal')" class="btn btn-secondary" style="flex:1;padding:12px;">Otkaži</button>
+            <button onclick="potvrdiSifru()" class="btn btn-success" style="flex:1;padding:12px;">🔓 Otključaj</button>
+        </div>
     </div>
 </div>
 
 <!-- MODAL ZA NOVI POPIS -->
 <div id="noviPopisModal" class="modal">
     <div class="modal-content">
-        <div class="modal-header"><h3>📅 Novi popis</h3><button onclick="closeModal('noviPopisModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3>📅 Novi popis</h3><button onclick="closeModal('noviPopisModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div class="form-group">
             <label>Lokal:</label>
             <select id="noviLokal" class="search-input"></select>
@@ -213,16 +267,17 @@
 <!-- MODAL ZA POVEZIVANJE ARTIKLA SA CJENOVNIKOM -->
 <div id="poveziModal" class="modal">
     <div class="modal-content" style="max-width:700px;">
-        <div class="modal-header"><h3>🔍 Poveži sa cjenovnikom</h3><button onclick="closeModal('poveziModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3>🔍 Poveži sa cjenovnikom</h3><button onclick="closeModal('poveziModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div id="poveziTrenutni" class="povezi-info"></div>
-        <div class="info-box info-info">
-            💡 <strong>Kada klikneš na artikal iz cjenovnika</strong>, cijena se upisuje u ovaj popis <strong>i pamti se mapiranje</strong> — sljedeći put automatski prepoznaje!
+        <div class="info-box info-info" style="font-size:13px;">
+            💡 Klikni na artikal iz cjenovnika → cijena se upisuje i <strong>mapiranje se pamti zauvijek</strong>.
         </div>
         <input type="text" id="poveziSearch" class="search-input" placeholder="🔍 Pretraži cjenovnik..." oninput="renderPoveziLista()">
         <div id="poveziLista" class="povezi-lista"></div>
         <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
-            <button onclick="closeModal('poveziModal')" class="btn btn-secondary" style="flex:1;padding:10px;">Otkaži</button>
-            <button onclick="upisiCijenuRucno()" class="btn btn-warning" style="flex:1;padding:10px;">✏️ Upiši cijenu ručno</button>
+            <button onclick="closeModal('poveziModal')" class="btn btn-secondary" style="flex:1;padding:12px;">Otkaži</button>
+            <button onclick="upisiCijenuRucno()" class="btn btn-warning" style="flex:1;padding:12px;">✏️ Upiši cijenu</button>
+            <button onclick="dodajNoviArtikalIzPovezi()" class="btn btn-success" style="flex:1;padding:12px;">➕ Dodaj kao novi</button>
         </div>
     </div>
 </div>
@@ -230,7 +285,7 @@
 <!-- MODAL ZA CJENOVNIK -->
 <div id="cjenovnikModal" class="modal">
     <div class="modal-content">
-        <div class="modal-header"><h3>📋 Cjenovnik (zajednički za sve lokale)</h3><button onclick="closeModal('cjenovnikModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3>📋 Cjenovnik (zajednički za sve lokale)</h3><button onclick="closeModal('cjenovnikModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
             <button onclick="showDodajArtikal()" class="btn btn-success">+ Dodaj artikal</button>
             <button onclick="document.getElementById('cjenovnikUpload').click()" class="btn btn-info">📂 Upload cjenovnik</button>
@@ -245,7 +300,7 @@
 <!-- MODAL ZA DODAVANJE ARTIKLA -->
 <div id="addArtikalModal" class="modal">
     <div class="modal-content" style="max-width:500px;">
-        <div class="modal-header"><h3 id="addArtikalTitle">Dodaj artikal</h3><button onclick="closeModal('addArtikalModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3 id="addArtikalTitle">Dodaj artikal</h3><button onclick="closeModal('addArtikalModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div class="form-group">
             <label>Naziv artikla:</label>
             <input type="text" id="newArtikalNaziv" class="search-input">
@@ -277,7 +332,7 @@
 <!-- MODAL ZA PRIKAZ POPISA -->
 <div id="popisModal" class="modal">
     <div class="modal-content">
-        <div class="modal-header"><h3 id="popisTitle"></h3><button onclick="closeModal('popisModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3 id="popisTitle"></h3><button onclick="closeModal('popisModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div id="popisContent"></div>
         <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;" class="no-print">
             <button onclick="stampajPopis()" class="btn btn-info" style="flex:1;">🖨️ Štampaj A4</button>
@@ -291,7 +346,7 @@
 <!-- MODAL ZA EDIT ARTIKLA U POPISU -->
 <div id="editPopisArtikalModal" class="modal">
     <div class="modal-content" style="max-width:500px;">
-        <div class="modal-header"><h3>✏️ Uredi artikal u popisu</h3><button onclick="closeModal('editPopisArtikalModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3>✏️ Uredi artikal u popisu</h3><button onclick="closeModal('editPopisArtikalModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div class="form-group">
             <label>Naziv:</label>
             <input type="text" id="editPopisNaziv" class="search-input">
@@ -323,7 +378,7 @@
 <!-- MODAL ZA MENADŽER -->
 <div id="managerModal" class="modal">
     <div class="modal-content">
-        <div class="modal-header"><h3>👨‍💼 Menadžer</h3><button onclick="closeModal('managerModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3>👨‍💼 Menadžer</h3><button onclick="closeModal('managerModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
             <select id="managerLokal" onchange="renderManager()" class="search-input" style="flex:1;"></select>
             <select id="managerGodina" onchange="renderManager()" class="search-input" style="flex:1;">
@@ -341,7 +396,7 @@
 <!-- MODAL ZA EXPORT -->
 <div id="exportModal" class="modal">
     <div class="modal-content" style="max-width:500px;">
-        <div class="modal-header"><h3>📤 Izvoz podataka</h3><button onclick="closeModal('exportModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
+        <div class="modal-header"><h3>📤 Izvoz podataka</h3><button onclick="closeModal('exportModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <button onclick="downloadBackup()" class="btn btn-info" style="width:100%;margin-bottom:10px;">💾 Preuzmi fajl</button>
         <button onclick="shareToGmail()" class="btn btn-danger" style="width:100%;margin-bottom:10px;">📧 Gmail</button>
         <button onclick="shareToDrive()" class="btn btn-success" style="width:100%;margin-bottom:10px;">📗 Google Drive</button>
@@ -369,8 +424,11 @@ let prikazanLokalId = null;
 let prikazanPopisIndex = null;
 let editingPopisArtikalIndex = null;
 
-// Za povezivanje
-let povezivanjeKontekst = null; // { tip: 'novi' | 'postojeci', index: number }
+let povezivanjeKontekst = null;
+
+// Za šifru — koji lokal i koja akcija
+let sifraKontekst = null; // { lokalId, akcija: 'ulaz'|'edit'|'brisanje'|'noviPopis' }
+let otkljucaniLokali = {}; // { lokalId: true } — koji su otključani u ovoj sesiji
 
 const MESECI = ['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
 const SEKTORI = ['ŠANK', 'KUHINJA'];
@@ -430,6 +488,9 @@ function migrateData() {
         delete data.popisi;
     }
     if (!data.lokali) data.lokali = [];
+    
+    // Osiguraj da svaki lokal ima polje sifra
+    data.lokali.forEach(l => { if (l.sifra === undefined) l.sifra = ''; });
 }
 
 function generisiId() {
@@ -472,15 +533,10 @@ function nadjiCijenu(naziv) {
     if (!naziv) return null;
     const norm = normalize(naziv);
     if (!norm) return null;
-    
-    // 1. Tačan match po nazivu
     let found = data.cjenovnik.find(c => normalize(c.naziv) === norm);
     if (found) return found;
-    
-    // 2. Tačan match po aliasu
     found = data.cjenovnik.find(c => (c.aliasi || []).some(al => normalize(al) === norm));
     if (found) return found;
-    
     return null;
 }
 
@@ -512,6 +568,59 @@ function izracunajUkupnoLokalSektor(lokal, sektor) {
     return uk;
 }
 
+// ==================== ŠIFRA / ZAKLJUČAVANJE ====================
+function lokalJeZakljucan(lokal) {
+    if (!lokal.sifra || lokal.sifra === '') return false;
+    return !otkljucaniLokali[lokal.id];
+}
+
+function zatraziSifru(lokalId, akcija, callback) {
+    const lokal = getLokal(lokalId);
+    if (!lokal) return;
+    if (!lokal.sifra || lokal.sifra === '') {
+        callback();
+        return;
+    }
+    if (otkljucaniLokali[lokal.id]) {
+        callback();
+        return;
+    }
+    
+    sifraKontekst = { lokalId, akcija, callback };
+    
+    const akcijaTekst = {
+        'ulaz': 'Za ulaz u lokal',
+        'edit': 'Za uređivanje lokala',
+        'brisanje': 'Za brisanje lokala',
+        'noviPopis': 'Za dodavanje popisa'
+    };
+    
+    document.getElementById('sifraModalTitle').textContent = '🔒 ' + (akcijaTekst[akcija] || 'Unesi šifru');
+    document.getElementById('sifraModalInfo').innerHTML = `<div class="info-box info-info">Lokal: <strong>${lokal.naziv}</strong><br>Unesi šifru da nastaviš.</div>`;
+    document.getElementById('sifraUnos').value = '';
+    showModal('sifraModal');
+    setTimeout(() => document.getElementById('sifraUnos').focus(), 100);
+}
+
+function potvrdiSifru() {
+    if (!sifraKontekst) return;
+    const lokal = getLokal(sifraKontekst.lokalId);
+    if (!lokal) return;
+    
+    const unos = document.getElementById('sifraUnos').value;
+    if (unos === lokal.sifra) {
+        otkljucaniLokali[lokal.id] = true;
+        const cb = sifraKontekst.callback;
+        sifraKontekst = null;
+        closeModal('sifraModal');
+        if (cb) cb();
+    } else {
+        alert('❌ Pogrešna šifra!');
+        document.getElementById('sifraUnos').value = '';
+        document.getElementById('sifraUnos').focus();
+    }
+}
+
 // ==================== INIT ====================
 document.getElementById('loginBtn').onclick = async () => {
     if (document.getElementById('passwordInput').value === '123') {
@@ -529,6 +638,7 @@ document.getElementById('loginBtn').onclick = async () => {
 document.getElementById('logoutBtn').onclick = () => {
     document.getElementById('appContent').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'flex';
+    otkljucaniLokali = {};
 };
 
 // ==================== GLAVNI EKRAN ====================
@@ -558,26 +668,91 @@ function renderLokali() {
     html += '<div class="lokali-grid">';
     data.lokali.forEach(lokal => {
         const brPopisa = (lokal.popisi || []).length;
-        const ukupno = (lokal.popisi || []).reduce((s, p) => s + izracunajUkupnoPopis(p), 0);
-        const brSank = (lokal.popisi || []).filter(p => p.sektor === 'ŠANK').length;
-        const brKuhinja = (lokal.popisi || []).filter(p => p.sektor === 'KUHINJA').length;
+        const zakljucan = lokal.sifra && lokal.sifra !== '';
+        const kljucOtvoren = otkljucaniLokali[lokal.id];
         
         html += `
-            <div class="lokal-card" onclick="otvoriLokal('${lokal.id}')">
+            <div class="lokal-card ${zakljucan ? 'zakljucan' : ''}" onclick="pokusajUlazak('${lokal.id}')">
                 <div class="lokal-actions" onclick="event.stopPropagation()">
-                    <button class="btn btn-sm btn-info" onclick="urediLokal('${lokal.id}')">✏️</button>
-                    <button class="btn btn-sm btn-danger" onclick="obrisiLokal('${lokal.id}')">🗑</button>
+                    <button class="btn btn-sm btn-info" onclick="pokusajUredi('${lokal.id}')" title="Uredi">✏️</button>
+                    <button class="btn btn-sm ${zakljucan && !kljucOtvoren ? 'btn-warning' : 'btn-secondary'}" onclick="pokusajZakljucaj('${lokal.id}')" title="${zakljucan ? 'Zaključan' : 'Otključan'}">${zakljucan && !kljucOtvoren ? '🔒' : '🔓'}</button>
+                    <button class="btn btn-sm btn-danger" onclick="pokusajObrisi('${lokal.id}')" title="Obriši">🗑</button>
                 </div>
                 <h3>🏢 ${lokal.naziv}</h3>
                 <div class="lokal-stats">
-                    📊 ${brPopisa} popisa ukupno<br>
-                    🍺 ŠANK: ${brSank} | 🍳 KUHINJA: ${brKuhinja}
+                    📊 ${brPopisa} ${brPopisa === 1 ? 'popis' : 'popisa'}
                 </div>
-                <div class="folder-ukupno" style="color:${bojaVrijednosti(ukupno)};">${ukupno.toFixed(2)} €</div>
+                ${zakljucan ? `<div class="lokal-lock-badge">${kljucOtvoren ? '🔓 Otključan' : '🔒 Zaključan'}</div>` : ''}
             </div>`;
     });
     html += '</div>';
     c.innerHTML = html;
+}
+
+function pokusajUlazak(id) {
+    zatraziSifru(id, 'ulaz', () => {
+        aktivniLokalId = id;
+        aktivniSektor = null;
+        renderMain();
+    });
+}
+
+function pokusajUredi(id) {
+    zatraziSifru(id, 'edit', () => {
+        const lokal = getLokal(id);
+        if (!lokal) return;
+        editingLokalId = id;
+        document.getElementById('lokalModalTitle').textContent = 'Uredi lokal';
+        document.getElementById('lokalNaziv').value = lokal.naziv;
+        document.getElementById('lokalSifra').value = lokal.sifra || '';
+        document.getElementById('lokalSifraInfo').innerHTML = (lokal.sifra && lokal.sifra !== '') 
+            ? `<div class="info-box info-warning">🔒 Lokal ima postavljenu šifru. Ostavi prazno da ukloniš zaštitu.</div>` 
+            : '';
+        showModal('noviLokalModal');
+    });
+}
+
+function pokusajZakljucaj(id) {
+    const lokal = getLokal(id);
+    if (!lokal) return;
+    
+    if (lokal.sifra && lokal.sifra !== '') {
+        // već ima šifru — pitaj da ukloniš ili promijeniš
+        if (otkljucaniLokali[id]) {
+            if (confirm(`Lokal "${lokal.naziv}" je zaključan šifrom.\n\nŽeliš li da UKLONIŠ šifru (lokal postaje otvoren)?`)) {
+                lokal.sifra = '';
+                saveToCloud();
+                renderMain();
+                alert('✅ Šifra uklonjena. Lokal je sada otvoren.');
+            }
+        } else {
+            // nije otključan — traži šifru da bi mogao upravljati
+            zatraziSifru(id, 'edit', () => {
+                pokusajZakljucaj(id);
+            });
+        }
+    } else {
+        // nema šifru — postavi novu
+        const novaSifra = prompt(`Postavi šifru za lokal "${lokal.naziv}":\n(ostavi prazno da otkažeš)`);
+        if (novaSifra === null || novaSifra.trim() === '') return;
+        lokal.sifra = novaSifra.trim();
+        otkljucaniLokali[lokal.id] = true;
+        saveToCloud();
+        renderMain();
+        alert(`✅ Lokal "${lokal.naziv}" je zaključan šifrom.`);
+    }
+}
+
+function pokusajObrisi(id) {
+    zatraziSifru(id, 'brisanje', async () => {
+        const lokal = getLokal(id);
+        if (!lokal) return;
+        if (!confirm(`⚠️ Obrisati lokal "${lokal.naziv}" i sve njegove popise?`)) return;
+        data.lokali = data.lokali.filter(l => l.id !== id);
+        await saveToCloud();
+        if (aktivniLokalId === id) { aktivniLokalId = null; aktivniSektor = null; }
+        renderMain();
+    });
 }
 
 function renderFolderi() {
@@ -660,7 +835,6 @@ function renderPopisiSektora() {
 
 function idiNaLokale() { aktivniLokalId = null; aktivniSektor = null; renderMain(); }
 function idiNaFoldere() { aktivniSektor = null; renderMain(); }
-function otvoriLokal(id) { aktivniLokalId = id; aktivniSektor = null; renderMain(); }
 function otvoriSektor(sektor) { aktivniSektor = sektor; renderMain(); }
 
 // ==================== LOKALI CRUD ====================
@@ -668,41 +842,30 @@ function showNoviLokal() {
     editingLokalId = null;
     document.getElementById('lokalModalTitle').textContent = 'Novi lokal';
     document.getElementById('lokalNaziv').value = '';
-    showModal('noviLokalModal');
-}
-
-function urediLokal(id) {
-    const lokal = getLokal(id);
-    if (!lokal) return;
-    editingLokalId = id;
-    document.getElementById('lokalModalTitle').textContent = 'Uredi lokal';
-    document.getElementById('lokalNaziv').value = lokal.naziv;
+    document.getElementById('lokalSifra').value = '';
+    document.getElementById('lokalSifraInfo').innerHTML = '';
     showModal('noviLokalModal');
 }
 
 async function sacuvajLokal() {
     const naziv = document.getElementById('lokalNaziv').value.trim();
     if (!naziv) { alert('Unesite naziv!'); return; }
+    const sifra = document.getElementById('lokalSifra').value.trim();
     
     if (editingLokalId) {
         const lokal = getLokal(editingLokalId);
-        if (lokal) lokal.naziv = naziv;
+        if (lokal) {
+            lokal.naziv = naziv;
+            lokal.sifra = sifra;
+        }
     } else {
-        data.lokali.push({ id: generisiId(), naziv, popisi: [] });
+        const novi = { id: generisiId(), naziv, popisi: [], sifra };
+        data.lokali.push(novi);
+        if (sifra) otkljucaniLokali[novi.id] = true;
     }
     
     await saveToCloud();
     closeModal('noviLokalModal');
-    renderMain();
-}
-
-async function obrisiLokal(id) {
-    const lokal = getLokal(id);
-    if (!lokal) return;
-    if (!confirm(`⚠️ Obrisati lokal "${lokal.naziv}" i sve njegove popise?`)) return;
-    data.lokali = data.lokali.filter(l => l.id !== id);
-    await saveToCloud();
-    if (aktivniLokalId === id) { aktivniLokalId = null; aktivniSektor = null; }
     renderMain();
 }
 
@@ -729,8 +892,10 @@ function showNoviPopis() {
 }
 
 function showNoviPopisZaSektor(sektor) {
-    showNoviPopis();
-    document.getElementById('noviSektor').value = sektor;
+    zatraziSifru(aktivniLokalId, 'noviPopis', () => {
+        showNoviPopis();
+        document.getElementById('noviSektor').value = sektor;
+    });
 }
 
 function ucitajExcel(event) {
@@ -923,12 +1088,11 @@ function renderPoveziLista() {
     }
     
     if (filtered.length === 0) {
-        lista.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">Nema rezultata. Probaj drugi pojam.</div>';
+        lista.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">Nema rezultata. Probaj drugi pojam ili klikni <strong>➕ Dodaj kao novi</strong> ispod.</div>';
         return;
     }
     
     const prikaz = filtered.slice(0, 50);
-    
     let html = '';
     prikaz.forEach(c => {
         const idxCj = data.cjenovnik.indexOf(c);
@@ -944,9 +1108,8 @@ function renderPoveziLista() {
     });
     
     if (filtered.length > 50) {
-        html += `<div style="padding:10px;text-align:center;color:#999;font-size:12px;">Prikazano prvih 50 od ${filtered.length} rezultata. Koristi pretragu za preciznije.</div>`;
+        html += `<div style="padding:10px;text-align:center;color:#999;font-size:12px;">Prikazano prvih 50 od ${filtered.length} rezultata.</div>`;
     }
-    
     lista.innerHTML = html;
 }
 
@@ -962,13 +1125,11 @@ async function odaberiArtikal(idxCj) {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    // Postavi cijenu
     artikal.cijena = cj.cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
-    // ** KLJUČNO: Odmah zapamti mapiranje u cjenovniku **
     if (!cj.aliasi) cj.aliasi = [];
     const normTrenutni = normalize(artikal.naziv);
     const vecPostoji = cj.aliasi.some(al => normalize(al) === normTrenutni);
@@ -976,7 +1137,6 @@ async function odaberiArtikal(idxCj) {
         cj.aliasi.push(artikal.naziv);
     }
     
-    // ** ODMAH SAČUVAJ U CLOUD **
     await saveToCloud();
     
     closeModal('poveziModal');
@@ -990,7 +1150,7 @@ async function odaberiArtikal(idxCj) {
         renderPreviewNovi();
     }
     
-    alert(`✅ Mapirano!\n\n"${artikal.naziv}" → "${cj.naziv}"\nCijena: ${cj.cijena.toFixed(3)} €\n\nOvo mapiranje je sačuvano i prepoznavat će se u svim budućim popisima.`);
+    alert(`✅ Mapirano!\n\n"${artikal.naziv}" → "${cj.naziv}"\nCijena: ${cj.cijena.toFixed(3)} €\n\nMapiranje sačuvano za buduće popise.`);
 }
 
 function upisiCijenuRucno() {
@@ -1023,10 +1183,69 @@ function upisiCijenuRucno() {
     }
 }
 
+async function dodajNoviArtikalIzPovezi() {
+    if (!povezivanjeKontekst) return;
+    let artikal;
+    
+    if (povezivanjeKontekst.tip === 'novi') {
+        artikal = trenutniPopis.artikli[povezivanjeKontekst.index];
+    } else {
+        const lokal = getLokal(prikazanLokalId);
+        artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
+    }
+    
+    const naziv = prompt('Naziv za cjenovnik (možeš promijeniti):', artikal.naziv);
+    if (naziv === null) return;
+    if (!naziv.trim()) { alert('Naziv ne može biti prazan!'); return; }
+    
+    const cijenaStr = prompt(`Cijena za "${naziv.trim()}" (€):`, artikal.cijena || '');
+    if (cijenaStr === null) return;
+    const cijena = parseFloat(cijenaStr) || 0;
+    if (cijena <= 0) { alert('Cijena mora biti veća od 0!'); return; }
+    
+    const existingIdx = data.cjenovnik.findIndex(c => normalize(c.naziv) === normalize(naziv.trim()));
+    if (existingIdx >= 0) {
+        if (!confirm(`Artikal "${naziv.trim()}" već postoji u cjenovniku sa cijenom ${data.cjenovnik[existingIdx].cijena.toFixed(3)} €.\n\nAžurirati cijenu na ${cijena.toFixed(3)} €?`)) return;
+        data.cjenovnik[existingIdx].cijena = cijena;
+        if (!data.cjenovnik[existingIdx].aliasi) data.cjenovnik[existingIdx].aliasi = [];
+        const normOrig = normalize(artikal.naziv);
+        if (normOrig !== normalize(naziv.trim()) && !data.cjenovnik[existingIdx].aliasi.some(al => normalize(al) === normOrig)) {
+            data.cjenovnik[existingIdx].aliasi.push(artikal.naziv);
+        }
+    } else {
+        data.cjenovnik.push({
+            naziv: naziv.trim(),
+            grupa: '',
+            jm: artikal.jm || 'KOM.',
+            cijena: cijena,
+            aliasi: []
+        });
+    }
+    
+    artikal.cijena = cijena;
+    artikal.pronadjena = true;
+    artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
+    artikal.vrijednost = artikal.kolicina * artikal.cijena;
+    
+    await saveToCloud();
+    
+    closeModal('poveziModal');
+    povezivanjeKontekst = null;
+    
+    if (prikazanLokalId !== null && prikazanPopisIndex !== null) {
+        renderPopisContent();
+        renderMain();
+    }
+    if (trenutniPopis) {
+        renderPreviewNovi();
+    }
+    
+    alert(`✅ Dodato u cjenovnik!\n\n"${naziv.trim()}" — ${cijena.toFixed(3)} €\n\nArtikal je sada u cjenovniku i prepoznavat će se u budućim popisima.`);
+}
+
 async function sacuvajCijeneICjenovnik() {
     if (!trenutniPopis) return;
     
-    // Dodaj samo artikle koji imaju cijenu a nisu mapirani na postojeći
     const zaDodati = trenutniPopis.artikli.filter(a => a.cijena > 0 && !a.pronadjena);
     
     if (zaDodati.length === 0) {
@@ -1141,7 +1360,7 @@ function renderPopisContent() {
             <td style="font-weight:bold;color:${bojaVrijednosti(v)};">${v.toFixed(2)} €</td>
             <td class="no-print">
                 <button class="btn btn-sm btn-info" onclick="urediPopisArtikal(${idx})" title="Uredi ime/cijenu">✏️</button>
-                <button class="btn-povezi" onclick="otvoriPoveziPostojeci(${idx})" title="Poveži sa cjenovnikom (trajno mapiranje)">🔍</button>
+                <button class="btn-povezi" onclick="otvoriPoveziPostojeci(${idx})" title="Poveži sa cjenovnikom">🔍</button>
                 <button class="btn btn-sm btn-danger" onclick="obrisiPopisArtikal(${idx})" title="Obriši">🗑</button>
             </td>
         </tr>`;
@@ -1299,7 +1518,7 @@ function renderCjenovnik() {
     }
     
     let html = `<p style="margin-bottom:10px;color:#666;">Ukupno: ${data.cjenovnik.length} artikala</p>`;
-    html += '<table class="artikal-table"><thead><tr><th>Naziv</th><th>Aliasi (mapirani nazivi)</th><th>Grupa</th><th>J.M.</th><th>Cijena</th><th>Akcije</th></tr></thead><tbody>';
+    html += '<table class="artikal-table"><thead><tr><th>Naziv</th><th>Aliasi</th><th>Grupa</th><th>J.M.</th><th>Cijena</th><th>Akcije</th></tr></thead><tbody>';
     filtered.forEach(a => {
         const idx = data.cjenovnik.indexOf(a);
         const aliasiStr = (a.aliasi && a.aliasi.length > 0) ? a.aliasi.join(', ') : '-';
@@ -1511,7 +1730,7 @@ async function ocistiDuplikate() {
             <div class="modal-content" style="max-width:700px;">
                 <div class="modal-header">
                     <h3>🧹 Čišćenje duplikata</h3>
-                    <button onclick="document.getElementById('${modalId}').remove()" style="font-size:24px;background:none;border:none;">&times;</button>
+                    <button onclick="document.getElementById('${modalId}').remove()" style="font-size:28px;background:none;border:none;">&times;</button>
                 </div>
                 ${previewHtml}
                 <div style="display:flex;gap:10px;margin-top:15px;">
@@ -1691,6 +1910,7 @@ function importData() {
                         await saveToCloud();
                         aktivniLokalId = null;
                         aktivniSektor = null;
+                        otkljucaniLokali = {};
                         renderMain();
                         alert('✅ Uvezeno!');
                     }
@@ -1711,6 +1931,7 @@ async function resetAll() {
             await saveToCloud();
             aktivniLokalId = null;
             aktivniSektor = null;
+            otkljucaniLokali = {};
             renderMain();
             alert('✅ Resetovano!');
         }
