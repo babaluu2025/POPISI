@@ -46,9 +46,8 @@
         .lokali-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-bottom: 25px; }
         .lokal-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; position: relative; border-left: 5px solid #667eea; }
         .lokal-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.15); transform: translateY(-2px); }
-        .lokal-card.active { background: #eef2ff; border-left-color: #28a745; }
         .lokal-card.zakljucan { border-left-color: #ffc107; }
-        .lokal-card h3 { font-size: 20px; margin-bottom: 8px; padding-right: 100px; }
+        .lokal-card h3 { font-size: 20px; margin-bottom: 8px; padding-right: 110px; }
         .lokal-card .lokal-stats { font-size: 13px; color: #666; margin-top: 10px; }
         .lokal-card .lokal-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 3px; }
         .lokal-lock-badge { display: inline-block; font-size: 11px; background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
@@ -126,7 +125,6 @@
             .artikal-table th, .artikal-table td { padding: 4px !important; }
         }
 
-        /* MOBILNI */
         @media (max-width: 768px) {
             .container { min-width: unset; padding: 10px; }
             .modal { padding: 0; align-items: flex-start; }
@@ -150,7 +148,7 @@
             .search-input { font-size: 16px; padding: 12px; }
             .header-content h1 { font-size: 20px; }
             .lokali-grid, .folderi-grid { grid-template-columns: 1fr; }
-            .lokal-card h3 { font-size: 18px; padding-right: 80px; }
+            .lokal-card h3 { font-size: 18px; padding-right: 90px; }
         }
     </style>
 </head>
@@ -212,7 +210,7 @@
         <div id="sifraModalInfo" style="margin-bottom:12px;"></div>
         <div class="form-group">
             <label>Šifra lokala:</label>
-            <input type="password" id="sifraUnos" class="search-input" placeholder="Unesi šifru" autocomplete="off">
+            <input type="password" id="sifraUnos" class="search-input" placeholder="Unesi šifru" autocomplete="off" onkeypress="if(event.key==='Enter') potvrdiSifru()">
         </div>
         <div style="display:flex;gap:10px;">
             <button onclick="closeModal('sifraModal')" class="btn btn-secondary" style="flex:1;padding:12px;">Otkaži</button>
@@ -426,9 +424,8 @@ let editingPopisArtikalIndex = null;
 
 let povezivanjeKontekst = null;
 
-// Za šifru — koji lokal i koja akcija
-let sifraKontekst = null; // { lokalId, akcija: 'ulaz'|'edit'|'brisanje'|'noviPopis' }
-let otkljucaniLokali = {}; // { lokalId: true } — koji su otključani u ovoj sesiji
+let sifraKontekst = null;
+let otkljucaniLokali = {};
 
 const MESECI = ['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
 const SEKTORI = ['ŠANK', 'KUHINJA'];
@@ -476,7 +473,7 @@ function migrateData() {
         if (!data.lokali) data.lokali = [];
         let lokal1 = data.lokali.find(l => l.naziv === 'Lokal 1');
         if (!lokal1) {
-            lokal1 = { id: generisiId(), naziv: 'Lokal 1', popisi: [] };
+            lokal1 = { id: generisiId(), naziv: 'Lokal 1', popisi: [], sifra: '' };
             data.lokali.push(lokal1);
         }
         stariPopisi.forEach(p => {
@@ -488,8 +485,6 @@ function migrateData() {
         delete data.popisi;
     }
     if (!data.lokali) data.lokali = [];
-    
-    // Osiguraj da svaki lokal ima polje sifra
     data.lokali.forEach(l => { if (l.sifra === undefined) l.sifra = ''; });
 }
 
@@ -569,19 +564,25 @@ function izracunajUkupnoLokalSektor(lokal, sektor) {
 }
 
 // ==================== ŠIFRA / ZAKLJUČAVANJE ====================
-function lokalJeZakljucan(lokal) {
-    if (!lokal.sifra || lokal.sifra === '') return false;
-    return !otkljucaniLokali[lokal.id];
+function lokalImaSifru(lokal) {
+    return lokal.sifra && lokal.sifra !== '';
+}
+
+function lokalJeOtkljucanSada(lokal) {
+    return otkljucaniLokali[lokal.id] === true;
 }
 
 function zatraziSifru(lokalId, akcija, callback) {
     const lokal = getLokal(lokalId);
     if (!lokal) return;
-    if (!lokal.sifra || lokal.sifra === '') {
+    
+    // Nema šifre — pusti direktno
+    if (!lokalImaSifru(lokal)) {
         callback();
         return;
     }
-    if (otkljucaniLokali[lokal.id]) {
+    // Već otključan u ovoj sesiji — pusti direktno
+    if (lokalJeOtkljucanSada(lokal)) {
         callback();
         return;
     }
@@ -592,7 +593,8 @@ function zatraziSifru(lokalId, akcija, callback) {
         'ulaz': 'Za ulaz u lokal',
         'edit': 'Za uređivanje lokala',
         'brisanje': 'Za brisanje lokala',
-        'noviPopis': 'Za dodavanje popisa'
+        'noviPopis': 'Za dodavanje popisa',
+        'upravljanjeSifrom': 'Za upravljanje šifrom'
     };
     
     document.getElementById('sifraModalTitle').textContent = '🔒 ' + (akcijaTekst[akcija] || 'Unesi šifru');
@@ -668,21 +670,31 @@ function renderLokali() {
     html += '<div class="lokali-grid">';
     data.lokali.forEach(lokal => {
         const brPopisa = (lokal.popisi || []).length;
-        const zakljucan = lokal.sifra && lokal.sifra !== '';
-        const kljucOtvoren = otkljucaniLokali[lokal.id];
+        const imaSifru = lokalImaSifru(lokal);
+        const otkljucan = lokalJeOtkljucanSada(lokal);
+        
+        let badge = '';
+        if (imaSifru) {
+            badge = otkljucan 
+                ? `<div class="lokal-lock-badge" style="background:#d4edda;color:#155724;">🔓 Otključan (sesija)</div>`
+                : `<div class="lokal-lock-badge">🔒 Zaključan</div>`;
+        }
+        
+        const lockIcon = imaSifru ? (otkljucan ? '🔓' : '🔒') : '🔓';
+        const lockBtnClass = imaSifru ? (otkljucan ? 'btn-warning' : 'btn-warning') : 'btn-secondary';
         
         html += `
-            <div class="lokal-card ${zakljucan ? 'zakljucan' : ''}" onclick="pokusajUlazak('${lokal.id}')">
+            <div class="lokal-card ${imaSifru && !otkljucan ? 'zakljucan' : ''}" onclick="pokusajUlazak('${lokal.id}')">
                 <div class="lokal-actions" onclick="event.stopPropagation()">
                     <button class="btn btn-sm btn-info" onclick="pokusajUredi('${lokal.id}')" title="Uredi">✏️</button>
-                    <button class="btn btn-sm ${zakljucan && !kljucOtvoren ? 'btn-warning' : 'btn-secondary'}" onclick="pokusajZakljucaj('${lokal.id}')" title="${zakljucan ? 'Zaključan' : 'Otključan'}">${zakljucan && !kljucOtvoren ? '🔒' : '🔓'}</button>
+                    <button class="btn btn-sm ${lockBtnClass}" onclick="pokusajZakljucaj('${lokal.id}')" title="${imaSifru ? 'Upravljaj šifrom' : 'Postavi šifru'}">${lockIcon}</button>
                     <button class="btn btn-sm btn-danger" onclick="pokusajObrisi('${lokal.id}')" title="Obriši">🗑</button>
                 </div>
                 <h3>🏢 ${lokal.naziv}</h3>
                 <div class="lokal-stats">
                     📊 ${brPopisa} ${brPopisa === 1 ? 'popis' : 'popisa'}
                 </div>
-                ${zakljucan ? `<div class="lokal-lock-badge">${kljucOtvoren ? '🔓 Otključan' : '🔒 Zaključan'}</div>` : ''}
+                ${badge}
             </div>`;
     });
     html += '</div>';
@@ -705,8 +717,8 @@ function pokusajUredi(id) {
         document.getElementById('lokalModalTitle').textContent = 'Uredi lokal';
         document.getElementById('lokalNaziv').value = lokal.naziv;
         document.getElementById('lokalSifra').value = lokal.sifra || '';
-        document.getElementById('lokalSifraInfo').innerHTML = (lokal.sifra && lokal.sifra !== '') 
-            ? `<div class="info-box info-warning">🔒 Lokal ima postavljenu šifru. Ostavi prazno da ukloniš zaštitu.</div>` 
+        document.getElementById('lokalSifraInfo').innerHTML = lokalImaSifru(lokal)
+            ? `<div class="info-box info-warning">🔒 Lokal ima postavljenu šifru. Obriši polje da ukloniš zaštitu.</div>` 
             : '';
         showModal('noviLokalModal');
     });
@@ -716,30 +728,55 @@ function pokusajZakljucaj(id) {
     const lokal = getLokal(id);
     if (!lokal) return;
     
-    if (lokal.sifra && lokal.sifra !== '') {
-        // već ima šifru — pitaj da ukloniš ili promijeniš
-        if (otkljucaniLokali[id]) {
-            if (confirm(`Lokal "${lokal.naziv}" je zaključan šifrom.\n\nŽeliš li da UKLONIŠ šifru (lokal postaje otvoren)?`)) {
+    if (lokalImaSifru(lokal)) {
+        // Ima šifru — provjeri da li je otključan u ovoj sesiji
+        if (lokalJeOtkljucanSada(lokal)) {
+            // Otključan → dozvoli upravljanje šifrom
+            const akcija = prompt(
+                `Lokal "${lokal.naziv}" ima postavljenu šifru.\n\n` +
+                `Ukucaj:\n` +
+                `• "ukloni" — ukloni šifru (lokal postaje otvoren)\n` +
+                `• "promijeni" — postavi novu šifru\n` +
+                `• bilo šta drugo — otkaži`
+            );
+            if (akcija === null) return;
+            const a = akcija.trim().toLowerCase();
+            
+            if (a === 'ukloni') {
                 lokal.sifra = '';
+                delete otkljucaniLokali[id];
                 saveToCloud();
                 renderMain();
                 alert('✅ Šifra uklonjena. Lokal je sada otvoren.');
+            } else if (a === 'promijeni') {
+                const novaSifra = prompt('Unesi novu šifru:');
+                if (novaSifra === null || novaSifra.trim() === '') return;
+                lokal.sifra = novaSifra.trim();
+                delete otkljucaniLokali[id];
+                saveToCloud();
+                renderMain();
+                alert('✅ Šifra promijenjena. Lokal je zaključan — trebat će ti nova šifra za ulaz.');
             }
         } else {
-            // nije otključan — traži šifru da bi mogao upravljati
-            zatraziSifru(id, 'edit', () => {
+            // Zaključan → traži šifru prije upravljanja
+            zatraziSifru(id, 'upravljanjeSifrom', () => {
                 pokusajZakljucaj(id);
             });
         }
     } else {
-        // nema šifru — postavi novu
-        const novaSifra = prompt(`Postavi šifru za lokal "${lokal.naziv}":\n(ostavi prazno da otkažeš)`);
+        // Nema šifru — postavi novu
+        const novaSifra = prompt(
+            `Postavi šifru za lokal "${lokal.naziv}":\n\n` +
+            `Nakon postavljanja, lokal će biti ZAKLJUČAN.\n` +
+            `Za ulazak, uređivanje ili brisanje trebat će ti šifra.\n\n` +
+            `(ostavi prazno da otkažeš)`
+        );
         if (novaSifra === null || novaSifra.trim() === '') return;
         lokal.sifra = novaSifra.trim();
-        otkljucaniLokali[lokal.id] = true;
+        delete otkljucaniLokali[id];
         saveToCloud();
         renderMain();
-        alert(`✅ Lokal "${lokal.naziv}" je zaključan šifrom.`);
+        alert(`✅ Lokal "${lokal.naziv}" je zaključan šifrom.\n\nZa ulazak ćeš morati unijeti šifru.`);
     }
 }
 
@@ -749,6 +786,7 @@ function pokusajObrisi(id) {
         if (!lokal) return;
         if (!confirm(`⚠️ Obrisati lokal "${lokal.naziv}" i sve njegove popise?`)) return;
         data.lokali = data.lokali.filter(l => l.id !== id);
+        delete otkljucaniLokali[id];
         await saveToCloud();
         if (aktivniLokalId === id) { aktivniLokalId = null; aktivniSektor = null; }
         renderMain();
@@ -856,12 +894,17 @@ async function sacuvajLokal() {
         const lokal = getLokal(editingLokalId);
         if (lokal) {
             lokal.naziv = naziv;
-            lokal.sifra = sifra;
+            if (sifra !== lokal.sifra) {
+                lokal.sifra = sifra;
+                // Ako je šifra nova ili promijenjena, zaključaj lokal
+                delete otkljucaniLokali[lokal.id];
+            }
         }
     } else {
         const novi = { id: generisiId(), naziv, popisi: [], sifra };
         data.lokali.push(novi);
-        if (sifra) otkljucaniLokali[novi.id] = true;
+        // Ako je šifra postavljena, NE otključavaj — ostaje zaključan
+        // Ako nema šifre, nema potrebe za otključavanjem
     }
     
     await saveToCloud();
