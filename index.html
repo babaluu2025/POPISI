@@ -24,9 +24,8 @@
         .login-container { display: flex; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
         .login-box { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align: center; width: 90%; max-width: 400px; }
         .login-icon { font-size: 4rem; margin-bottom: 20px; }
-        .password-input { margin: 20px 0; }
-        .password-input input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 5px; font-size: 16px; }
-        .login-btn { background: #667eea; color: white; border: none; padding: 12px 30px; border-radius: 5px; font-size: 16px; cursor: pointer; width: 100%; }
+        .login-btn { background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 5px; font-size: 18px; cursor: pointer; width: 100%; font-weight: bold; }
+        .login-btn:hover { background: #5568d3; }
 
         header { background: white; padding: 15px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .header-content { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -159,10 +158,8 @@
     <div class="login-box">
         <div class="login-icon">📊</div>
         <h1>Popis</h1>
-        <p>Unesite šifru</p>
-        <div class="password-input"><input type="password" id="passwordInput" placeholder="Šifra" autocomplete="off" value="123"></div>
-        <button id="loginBtn" class="login-btn">Pristupi</button>
-        <div style="margin-top:15px;color:#666;">Šifra: <strong>123</strong></div>
+        <p style="margin-bottom:20px;color:#666;">Dobrodošli</p>
+        <button id="loginBtn" class="login-btn">Uđi</button>
     </div>
 </div>
 
@@ -176,7 +173,7 @@
                 <button onclick="showCjenovnik()" class="btn btn-info">📋 Cjenovnik</button>
                 <button onclick="showManager()" class="btn btn-warning">👨‍💼 Menadžer</button>
                 <button onclick="exportData()" class="btn btn-info">📤 Export</button>
-                <button onclick="importData()" class="btn btn-info">📂 Uvoz</button>
+                <button onclick="zastitiUvoz()" class="btn btn-info">📂 Uvoz</button>
                 <button onclick="resetAll()" class="btn btn-danger">🔄 Reset</button>
                 <button id="logoutBtn" class="btn btn-danger">Odjava</button>
             </div>
@@ -286,7 +283,7 @@
         <div class="modal-header"><h3>📋 Cjenovnik (zajednički za sve lokale)</h3><button onclick="closeModal('cjenovnikModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
             <button onclick="showDodajArtikal()" class="btn btn-success">+ Dodaj artikal</button>
-            <button onclick="document.getElementById('cjenovnikUpload').click()" class="btn btn-info">📂 Upload cjenovnik</button>
+            <button onclick="zastitiUploadCjenovnik()" class="btn btn-info">📂 Upload cjenovnik</button>
             <input type="file" id="cjenovnikUpload" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajCjenovnik(event)">
             <button onclick="ocistiDuplikate()" class="btn btn-warning">🧹 Očisti duplikate</button>
             <input type="text" id="cjenovnikSearch" placeholder="🔍 Pretraži..." class="search-input" style="flex:1;min-width:200px;" oninput="renderCjenovnik()">
@@ -378,7 +375,7 @@
     <div class="modal-content">
         <div class="modal-header"><h3>👨‍💼 Menadžer</h3><button onclick="closeModal('managerModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;">
-            <select id="managerLokal" onchange="renderManager()" class="search-input" style="flex:1;"></select>
+            <select id="managerLokal" onchange="provjeriSifruZaManager()" class="search-input" style="flex:1;"></select>
             <select id="managerGodina" onchange="renderManager()" class="search-input" style="flex:1;">
                 <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option>
             </select>
@@ -395,6 +392,7 @@
 <div id="exportModal" class="modal">
     <div class="modal-content" style="max-width:500px;">
         <div class="modal-header"><h3>📤 Izvoz podataka</h3><button onclick="closeModal('exportModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
+        <div id="exportLokalInfo"></div>
         <button onclick="downloadBackup()" class="btn btn-info" style="width:100%;margin-bottom:10px;">💾 Preuzmi fajl</button>
         <button onclick="shareToGmail()" class="btn btn-danger" style="width:100%;margin-bottom:10px;">📧 Gmail</button>
         <button onclick="shareToDrive()" class="btn btn-success" style="width:100%;margin-bottom:10px;">📗 Google Drive</button>
@@ -406,6 +404,7 @@
 // ==================== KONFIGURACIJA ====================
 const SUPABASE_URL = 'https://itoyvqqssqmeyxawvulq.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_nbUWlCIXbB48NoBRhH4ucg_PfCAmau1';
+const ADMIN_SIFRA = '1978';
 
 let supabaseClient = null;
 try { supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch(e) {}
@@ -536,7 +535,10 @@ function nadjiCijenu(naziv) {
 }
 
 function showModal(id) { document.getElementById(id).classList.add('active'); }
-function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function closeModal(id) { 
+    document.getElementById(id).classList.remove('active'); 
+    if (id === 'exportModal') window._exportLokalId = null;
+}
 
 function bojaVrijednosti(v) {
     if (v < 0) return '#dc3545';
@@ -563,6 +565,35 @@ function izracunajUkupnoLokalSektor(lokal, sektor) {
     return uk;
 }
 
+// ==================== ADMIN ŠIFRA ====================
+function zatraziAdminSifru(akcija, callback) {
+    const unos = prompt(`🔐 Admin šifra za: ${akcija}\n\n(Šifra je ista kao za reset)`);
+    if (unos === null) return;
+    if (unos === ADMIN_SIFRA) {
+        callback();
+    } else {
+        alert('❌ Pogrešna admin šifra!');
+    }
+}
+
+function zastitiNoviLokalDugme() {
+    zatraziAdminSifru('dodavanje novog lokala', () => {
+        showNoviLokal();
+    });
+}
+
+function zastitiUvoz() {
+    zatraziAdminSifru('uvoz podataka (backup)', () => {
+        importData();
+    });
+}
+
+function zastitiUploadCjenovnik() {
+    zatraziAdminSifru('uvoz cjenovnika', () => {
+        document.getElementById('cjenovnikUpload').click();
+    });
+}
+
 // ==================== ŠIFRA / ZAKLJUČAVANJE ====================
 function lokalImaSifru(lokal) {
     return lokal.sifra && lokal.sifra !== '';
@@ -576,16 +607,8 @@ function zatraziSifru(lokalId, akcija, callback) {
     const lokal = getLokal(lokalId);
     if (!lokal) return;
     
-    // Nema šifre — pusti direktno
-    if (!lokalImaSifru(lokal)) {
-        callback();
-        return;
-    }
-    // Već otključan u ovoj sesiji — pusti direktno
-    if (lokalJeOtkljucanSada(lokal)) {
-        callback();
-        return;
-    }
+    if (!lokalImaSifru(lokal)) { callback(); return; }
+    if (lokalJeOtkljucanSada(lokal)) { callback(); return; }
     
     sifraKontekst = { lokalId, akcija, callback };
     
@@ -625,16 +648,14 @@ function potvrdiSifru() {
 
 // ==================== INIT ====================
 document.getElementById('loginBtn').onclick = async () => {
-    if (document.getElementById('passwordInput').value === '123') {
-        document.getElementById('loginScreen').style.display = 'none';
-        document.getElementById('appContent').style.display = 'block';
-        await loadFromCloud();
-        const sel = document.getElementById('noviMesec');
-        sel.innerHTML = MESECI.map((m, i) => `<option value="${i}">${m}</option>`).join('');
-        sel.value = new Date().getMonth();
-        document.getElementById('noviGodina').value = new Date().getFullYear();
-        renderMain();
-    }
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appContent').style.display = 'block';
+    await loadFromCloud();
+    const sel = document.getElementById('noviMesec');
+    sel.innerHTML = MESECI.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+    sel.value = new Date().getMonth();
+    document.getElementById('noviGodina').value = new Date().getFullYear();
+    renderMain();
 };
 
 document.getElementById('logoutBtn').onclick = () => {
@@ -658,7 +679,7 @@ function renderLokali() {
     const c = document.getElementById('mainContent');
     let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px;">';
     html += '<h2>🏢 Lokali</h2>';
-    html += '<button onclick="showNoviLokal()" class="btn btn-success">+ Novi lokal</button>';
+    html += '<button onclick="zastitiNoviLokalDugme()" class="btn btn-success">+ Novi lokal</button>';
     html += '</div>';
     
     if (data.lokali.length === 0) {
@@ -681,13 +702,12 @@ function renderLokali() {
         }
         
         const lockIcon = imaSifru ? (otkljucan ? '🔓' : '🔒') : '🔓';
-        const lockBtnClass = imaSifru ? (otkljucan ? 'btn-warning' : 'btn-warning') : 'btn-secondary';
         
         html += `
             <div class="lokal-card ${imaSifru && !otkljucan ? 'zakljucan' : ''}" onclick="pokusajUlazak('${lokal.id}')">
                 <div class="lokal-actions" onclick="event.stopPropagation()">
                     <button class="btn btn-sm btn-info" onclick="pokusajUredi('${lokal.id}')" title="Uredi">✏️</button>
-                    <button class="btn btn-sm ${lockBtnClass}" onclick="pokusajZakljucaj('${lokal.id}')" title="${imaSifru ? 'Upravljaj šifrom' : 'Postavi šifru'}">${lockIcon}</button>
+                    <button class="btn btn-sm btn-warning" onclick="pokusajZakljucaj('${lokal.id}')" title="${imaSifru ? 'Upravljaj šifrom' : 'Postavi šifru'}">${lockIcon}</button>
                     <button class="btn btn-sm btn-danger" onclick="pokusajObrisi('${lokal.id}')" title="Obriši">🗑</button>
                 </div>
                 <h3>🏢 ${lokal.naziv}</h3>
@@ -729,9 +749,7 @@ function pokusajZakljucaj(id) {
     if (!lokal) return;
     
     if (lokalImaSifru(lokal)) {
-        // Ima šifru — provjeri da li je otključan u ovoj sesiji
         if (lokalJeOtkljucanSada(lokal)) {
-            // Otključan → dozvoli upravljanje šifrom
             const akcija = prompt(
                 `Lokal "${lokal.naziv}" ima postavljenu šifru.\n\n` +
                 `Ukucaj:\n` +
@@ -755,20 +773,17 @@ function pokusajZakljucaj(id) {
                 delete otkljucaniLokali[id];
                 saveToCloud();
                 renderMain();
-                alert('✅ Šifra promijenjena. Lokal je zaključan — trebat će ti nova šifra za ulaz.');
+                alert('✅ Šifra promijenjena. Lokal je zaključan.');
             }
         } else {
-            // Zaključan → traži šifru prije upravljanja
             zatraziSifru(id, 'upravljanjeSifrom', () => {
                 pokusajZakljucaj(id);
             });
         }
     } else {
-        // Nema šifru — postavi novu
         const novaSifra = prompt(
             `Postavi šifru za lokal "${lokal.naziv}":\n\n` +
             `Nakon postavljanja, lokal će biti ZAKLJUČAN.\n` +
-            `Za ulazak, uređivanje ili brisanje trebat će ti šifra.\n\n` +
             `(ostavi prazno da otkažeš)`
         );
         if (novaSifra === null || novaSifra.trim() === '') return;
@@ -776,7 +791,7 @@ function pokusajZakljucaj(id) {
         delete otkljucaniLokali[id];
         saveToCloud();
         renderMain();
-        alert(`✅ Lokal "${lokal.naziv}" je zaključan šifrom.\n\nZa ulazak ćeš morati unijeti šifru.`);
+        alert(`✅ Lokal "${lokal.naziv}" je zaključan šifrom.`);
     }
 }
 
@@ -896,15 +911,12 @@ async function sacuvajLokal() {
             lokal.naziv = naziv;
             if (sifra !== lokal.sifra) {
                 lokal.sifra = sifra;
-                // Ako je šifra nova ili promijenjena, zaključaj lokal
                 delete otkljucaniLokali[lokal.id];
             }
         }
     } else {
         const novi = { id: generisiId(), naziv, popisi: [], sifra };
         data.lokali.push(novi);
-        // Ako je šifra postavljena, NE otključavaj — ostaje zaključan
-        // Ako nema šifre, nema potrebe za otključavanjem
     }
     
     await saveToCloud();
@@ -916,7 +928,7 @@ async function sacuvajLokal() {
 function showNoviPopis() {
     if (data.lokali.length === 0) {
         alert('⚠️ Prvo napravite lokal!');
-        showNoviLokal();
+        zastitiNoviLokalDugme();
         return;
     }
     
@@ -1283,7 +1295,7 @@ async function dodajNoviArtikalIzPovezi() {
         renderPreviewNovi();
     }
     
-    alert(`✅ Dodato u cjenovnik!\n\n"${naziv.trim()}" — ${cijena.toFixed(3)} €\n\nArtikal je sada u cjenovniku i prepoznavat će se u budućim popisima.`);
+    alert(`✅ Dodato u cjenovnik!\n\n"${naziv.trim()}" — ${cijena.toFixed(3)} €\n\nArtikal je sada u cjenovniku.`);
 }
 
 async function sacuvajCijeneICjenovnik() {
@@ -1293,7 +1305,7 @@ async function sacuvajCijeneICjenovnik() {
     
     if (zaDodati.length === 0) {
         await saveToCloud();
-        alert('✅ Nema novih cijena. Sve je već sačuvano u cjenovniku (uključujući mapiranja).');
+        alert('✅ Nema novih cijena. Sve je već sačuvano u cjenovniku.');
         return;
     }
     
@@ -1810,13 +1822,50 @@ async function potvrdiBrisanjeDuplikata() {
 
 // ==================== MENADŽER ====================
 function showManager() {
+    if (data.lokali.length === 0) {
+        alert('⚠️ Nema lokala.');
+        return;
+    }
+    
     const sel = document.getElementById('managerLokal');
-    sel.innerHTML = data.lokali.map(l => `<option value="${l.id}">${l.naziv}</option>`).join('');
+    sel.innerHTML = data.lokali.map(l => `<option value="${l.id}">${l.naziv}${lokalImaSifru(l) && !lokalJeOtkljucanSada(l) ? ' 🔒' : ''}</option>`).join('');
     if (aktivniLokalId) sel.value = aktivniLokalId;
     document.getElementById('managerGodina').value = new Date().getFullYear();
     if (aktivniSektor) document.getElementById('managerSektor').value = aktivniSektor;
-    renderManager();
+    
     showModal('managerModal');
+    provjeriSifruZaManager();
+}
+
+function provjeriSifruZaManager() {
+    const lokalId = document.getElementById('managerLokal').value;
+    const lokal = getLokal(lokalId);
+    const c = document.getElementById('managerContent');
+    
+    if (!lokal) { 
+        c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Odaberite lokal.</p>'; 
+        return; 
+    }
+    
+    if (lokalImaSifru(lokal) && !lokalJeOtkljucanSada(lokal)) {
+        c.innerHTML = `
+            <div class="info-box info-warning" style="text-align:center;padding:30px;">
+                <div style="font-size:3rem;margin-bottom:15px;">🔒</div>
+                <h3 style="margin-bottom:10px;">Lokal "${lokal.naziv}" je zaključan</h3>
+                <p style="margin-bottom:15px;">Za pregled podataka u Menadžeru, unesi šifru ovog lokala.</p>
+                <button onclick="zatraziSifruZaManager('${lokal.id}')" class="btn btn-success" style="padding:12px 30px;">🔓 Unesi šifru</button>
+            </div>
+        `;
+        return;
+    }
+    
+    renderManager();
+}
+
+function zatraziSifruZaManager(lokalId) {
+    zatraziSifru(lokalId, 'ulaz', () => {
+        renderManager();
+    });
 }
 
 function renderManager() {
@@ -1827,6 +1876,18 @@ function renderManager() {
     
     const lokal = getLokal(lokalId);
     if (!lokal) { c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Odaberite lokal.</p>'; return; }
+    
+    if (lokalImaSifru(lokal) && !lokalJeOtkljucanSada(lokal)) {
+        c.innerHTML = `
+            <div class="info-box info-warning" style="text-align:center;padding:30px;">
+                <div style="font-size:3rem;margin-bottom:15px;">🔒</div>
+                <h3 style="margin-bottom:10px;">Lokal "${lokal.naziv}" je zaključan</h3>
+                <p style="margin-bottom:15px;">Za pregled podataka, unesi šifru ovog lokala.</p>
+                <button onclick="zatraziSifruZaManager('${lokal.id}')" class="btn btn-success" style="padding:12px 30px;">🔓 Unesi šifru</button>
+            </div>
+        `;
+        return;
+    }
     
     const popisi = lokal.popisi.filter(p => p.godina === godina && p.sektor === sektor).sort((a, b) => a.mesec - b.mesec);
     if (popisi.length === 0) {
@@ -1912,15 +1973,64 @@ function stampajManager() {
     win.document.close(); win.print();
 }
 
-// ==================== EXPORT / IMPORT ====================
-function exportData() { showModal('exportModal'); }
+// ==================== EXPORT ====================
+function exportData() {
+    if (data.lokali.length === 0) {
+        alert('⚠️ Nema lokala za export.');
+        return;
+    }
+    
+    let lokalId = aktivniLokalId;
+    
+    if (!lokalId) {
+        const opcije = data.lokali.map((l, i) => `${i + 1}. ${l.naziv}`).join('\n');
+        const odabir = prompt(`Izaberi lokal za export (upiši broj):\n\n${opcije}`);
+        if (odabir === null) return;
+        const idx = parseInt(odabir) - 1;
+        if (isNaN(idx) || idx < 0 || idx >= data.lokali.length) {
+            alert('❌ Neispravan odabir.');
+            return;
+        }
+        lokalId = data.lokali[idx].id;
+    }
+    
+    const lokal = getLokal(lokalId);
+    if (!lokal) return;
+    
+    zatraziSifru(lokalId, 'ulaz', () => {
+        prikaziExportModal(lokal);
+    });
+}
+
+function prikaziExportModal(lokal) {
+    const infoEl = document.getElementById('exportLokalInfo');
+    infoEl.innerHTML = `<div class="info-box info-info">📤 Export za lokal: <strong>${lokal.naziv}</strong></div>`;
+    window._exportLokalId = lokal.id;
+    showModal('exportModal');
+}
 
 function downloadBackup() {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const lokalId = window._exportLokalId;
+    const lokal = lokalId ? getLokal(lokalId) : null;
+    
+    const exportData = lokal ? {
+        lokal: {
+            naziv: lokal.naziv,
+            popisi: lokal.popisi || []
+        },
+        cjenovnik: data.cjenovnik,
+        datumExporta: new Date().toLocaleString('hr')
+    } : data;
+    
+    const nazivFajla = lokal 
+        ? `Export_${lokal.naziv.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.json`
+        : `popis_backup_${new Date().toISOString().slice(0,10)}.json`;
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `popis_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = nazivFajla;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
@@ -1936,6 +2046,7 @@ function shareToDrive() {
     alert('📗 Drive: "+ Novo" → "File upload".');
 }
 
+// ==================== IMPORT ====================
 function importData() {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = '.json';
@@ -1965,9 +2076,10 @@ function importData() {
     input.click();
 }
 
+// ==================== RESET ====================
 async function resetAll() {
     const sifra = prompt('🔒 Šifra za reset:');
-    if (sifra === '1978') {
+    if (sifra === ADMIN_SIFRA) {
         if (confirm('⚠️ Resetovati SVE (sve lokale, popise i cjenovnik)?')) {
             localStorage.removeItem('popis_data');
             data = { cjenovnik: [], lokali: [] };
@@ -1982,7 +2094,10 @@ async function resetAll() {
 }
 
 window.onclick = function(event) {
-    if (event.target.classList.contains('modal')) event.target.classList.remove('active');
+    if (event.target.classList.contains('modal')) {
+        event.target.classList.remove('active');
+        if (event.target.id === 'exportModal') window._exportLokalId = null;
+    }
 };
 </script>
 </body>
