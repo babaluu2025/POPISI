@@ -287,7 +287,7 @@
             <input type="file" id="cjenovnikUpload" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajCjenovnik(event)">
             <button onclick="ocistiDuplikate()" class="btn btn-warning">🧹 Očisti duplikate</button>
             <button onclick="spojiSlicneArtikle()" class="btn btn-purple">🔗 Spoji slične</button>
-            <button onclick="ocistiSveAliase()" class="btn btn-danger">🧨 Očisti sve aliasе</button>
+            <button onclick="resetujSvaMapiranja()" class="btn btn-danger">🧨 Resetuj sva mapiranja</button>
             <input type="text" id="cjenovnikSearch" placeholder="🔍 Pretraži..." class="search-input" style="flex:1;min-width:200px;" oninput="renderCjenovnik()">
         </div>
         <div id="cjenovnikContent"></div>
@@ -386,6 +386,13 @@
             </select>
         </div>
         <div id="managerContent"></div>
+        
+        <!-- NOVA DUGMAD ZA MENADŽER -->
+        <div style="display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;" class="no-print">
+            <button onclick="osvjeziCijeneUMenadzeru()" class="btn btn-warning" style="flex:1;background:#e67e22;color:white;padding:12px;">🔄 Osvježi cijene iz cjenovnika</button>
+            <button onclick="dodajSveNedostajuceUCjenovnik()" class="btn btn-success" style="flex:1;padding:12px;">➕ Dodaj nedostajuće u cjenovnik</button>
+        </div>
+        
         <button onclick="stampajManager()" class="btn btn-info no-print" style="width:100%;margin-top:10px;">🖨️ Štampaj A4</button>
     </div>
 </div>
@@ -2034,8 +2041,8 @@ async function potvrdiSpajanje() {
     alert(`✅ Spojeno ${spojeno} artikala!\n\nSvi nazivi su sada aliasi glavnih artikala.\nUkupno u cjenovniku: ${data.cjenovnik.length}`);
 }
 
-// ==================== OČISTI SVE ALIASE ====================
-async function ocistiSveAliase() {
+// ==================== OČISTI SVE ALIASE / RESETUJ MAPIRANJA ====================
+async function resetujSvaMapiranja() {
     if (data.cjenovnik.length === 0) {
         alert('Cjenovnik je prazan.');
         return;
@@ -2203,6 +2210,81 @@ function renderManager() {
     });
     html += `<td style="color:${bojaVrijednosti(grand)};">${grand.toFixed(2)} €</td></tr></tbody></table></div>`;
     c.innerHTML = html;
+}
+
+// ==================== OSVJEŽI CIJENE IZ CJENOVNIKA ====================
+async function osvjeziCijeneUMenadzeru() {
+    const lokalId = document.getElementById('managerLokal').value;
+    const lokal = getLokal(lokalId);
+    
+    if (!lokal) return;
+    if (!confirm("Ovo će proći kroz SVE popise ovog lokala i ponovo izračunati cijene na osnovu trenutnog stanja u cjenovniku.\n\nAko je neki artikal sada ispravno mapiran, greška će nestati.\n\nNastaviti?")) return;
+    
+    let promijenjeno = 0;
+    
+    lokal.popisi.forEach(popis => {
+        popis.artikli.forEach(artikal => {
+            const cj = nadjiCijenu(artikal.naziv);
+            
+            if (cj) {
+                if (artikal.cijena !== cj.cijena) {
+                    artikal.cijena = cj.cijena;
+                    artikal.pronadjena = true;
+                    promijenjeno++;
+                }
+            } else {
+                if (artikal.cijena > 0) {
+                    artikal.cijena = 0;
+                    artikal.pronadjena = false;
+                    promijenjeno++;
+                }
+            }
+            
+            artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
+            artikal.vrijednost = artikal.kolicina * (artikal.cijena || 0);
+        });
+    });
+    
+    await saveToCloud();
+    renderManager();
+    renderMain();
+    
+    alert(`✅ Završeno!\n\nOsvježeno artikala: ${promijenjeno}\n\nMenadžer i glavni ekran su sada ažurirani.`);
+}
+
+async function dodajSveNedostajuceUCjenovnik() {
+    const lokalId = document.getElementById('managerLokal').value;
+    const lokal = getLokal(lokalId);
+    
+    if (!lokal) return;
+    
+    let dodano = 0;
+    
+    lokal.popisi.forEach(popis => {
+        (popis.artikli || []).forEach(artikal => {
+            if (!artikal.pronadjena || artikal.cijena === 0) {
+                const postoji = nadjiCijenu(artikal.naziv);
+                if (!postoji) {
+                    data.cjenovnik.push({
+                        naziv: artikal.naziv,
+                        grupa: '',
+                        jm: artikal.jm || 'KOM.',
+                        cijena: 0,
+                        aliasi: []
+                    });
+                    dodano++;
+                }
+            }
+        });
+    });
+    
+    if (dodano > 0) {
+        await saveToCloud();
+        renderManager();
+        alert(`✅ Dodano ${dodano} nedostajućih artikala u cjenovnik!\n\nSada možeš otići u 📋 Cjenovnik i upisati im tačne cijene.`);
+    } else {
+        alert('✅ Svi artikli iz popisa već postoje u cjenovniku.');
+    }
 }
 
 // ==================== ŠTAMPANJE ====================
