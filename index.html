@@ -78,7 +78,8 @@
         .artikal-table .total-row { background: #fff3cd; font-weight: bold; font-size: 15px; }
         .artikal-table .red-bez-cijene { background: #ffe5e5; }
         .artikal-table .red-bez-cijene:hover { background: #ffd5d5; }
-        .artikal-table .red-povezano { background: #e8f5e9; }
+        .artikal-table .red-mapirano { background: #e8f5e9; }
+        .artikal-table .red-mapirano:hover { background: #d4edda; }
         .cijena-input { width: 80px; padding: 6px; border: 2px solid #dc3545; border-radius: 4px; font-size: 14px; font-weight: bold; text-align: right; }
         .cijena-input:focus { border-color: #667eea; outline: none; background: #eef2ff; }
         .cijena-ok { color: #28a745; font-weight: bold; text-align: right; }
@@ -102,7 +103,6 @@
         .info-danger { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .info-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
 
-        /* Pretraga cjenovnika za povezivanje */
         .povezi-lista { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; margin-top: 10px; }
         .povezi-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .povezi-item:hover { background: #eef2ff; }
@@ -215,6 +215,9 @@
     <div class="modal-content" style="max-width:700px;">
         <div class="modal-header"><h3>🔍 Poveži sa cjenovnikom</h3><button onclick="closeModal('poveziModal')" style="font-size:24px;background:none;border:none;">&times;</button></div>
         <div id="poveziTrenutni" class="povezi-info"></div>
+        <div class="info-box info-info">
+            💡 <strong>Kada klikneš na artikal iz cjenovnika</strong>, cijena se upisuje u ovaj popis <strong>i pamti se mapiranje</strong> — sljedeći put automatski prepoznaje!
+        </div>
         <input type="text" id="poveziSearch" class="search-input" placeholder="🔍 Pretraži cjenovnik..." oninput="renderPoveziLista()">
         <div id="poveziLista" class="povezi-lista"></div>
         <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
@@ -367,8 +370,7 @@ let prikazanPopisIndex = null;
 let editingPopisArtikalIndex = null;
 
 // Za povezivanje
-let povezivanjeIndex = null;
-let povezivanjeLista = [];
+let povezivanjeKontekst = null; // { tip: 'novi' | 'postojeci', index: number }
 
 const MESECI = ['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
 const SEKTORI = ['ŠANK', 'KUHINJA'];
@@ -409,30 +411,24 @@ function saveLocal() { localStorage.setItem('popis_data', JSON.stringify(data));
 function migrateData() {
     if (!data) data = { cjenovnik: [], lokali: [] };
     if (!data.cjenovnik) data.cjenovnik = [];
-    
-    // Dodaj aliasе ako ih nema
     data.cjenovnik.forEach(a => { if (!a.aliasi) a.aliasi = []; });
     
     if (data.popisi && data.popisi.length > 0) {
         const stariPopisi = data.popisi;
         if (!data.lokali) data.lokali = [];
-        
         let lokal1 = data.lokali.find(l => l.naziv === 'Lokal 1');
         if (!lokal1) {
             lokal1 = { id: generisiId(), naziv: 'Lokal 1', popisi: [] };
             data.lokali.push(lokal1);
         }
-        
         stariPopisi.forEach(p => {
             lokal1.popisi.push({
                 mesec: p.mesec, godina: p.godina, sektor: p.sektor,
                 artikli: p.artikli || [], datumKreiranja: p.datumKreiranja || new Date().toLocaleString('hr')
             });
         });
-        
         delete data.popisi;
     }
-    
     if (!data.lokali) data.lokali = [];
 }
 
@@ -472,7 +468,6 @@ function formatBroj(n) {
     return n.toLocaleString('hr-HR', { maximumFractionDigits: 3 }); 
 }
 
-// NOVA STROGA nadjiCijenu — bez agresivnog fuzzy matcha
 function nadjiCijenu(naziv) {
     if (!naziv) return null;
     const norm = normalize(naziv);
@@ -486,7 +481,6 @@ function nadjiCijenu(naziv) {
     found = data.cjenovnik.find(c => (c.aliasi || []).some(al => normalize(al) === norm));
     if (found) return found;
     
-    // Nema matcha — vraćamo null, korisnik će ručno povezati
     return null;
 }
 
@@ -817,7 +811,7 @@ function renderPreviewNovi() {
     let html = '';
     if (bezCijene > 0) {
         html += `<div class="info-box info-warning">
-            <strong>⚠️ ${bezCijene} artikala bez cijene</strong> – klikni <strong>🔍 Poveži</strong> da nađeš u cjenovniku, ili upiši cijenu ručno
+            <strong>⚠️ ${bezCijene} artikala bez cijene</strong> – klikni <strong>🔍 Poveži</strong> da nađeš u cjenovniku. <strong>Mapiranje se pamti zauvijek!</strong>
         </div>`;
     }
     if (saCijenom > 0) {
@@ -850,12 +844,12 @@ function renderPreviewNovi() {
         
         if (a.pronadjena) {
             html += `<span class="cijena-ok">${a.cijena.toFixed(3)}</span>`;
-            html += ` <button class="btn-povezi" onclick="otvoriPovezi(${idx})" title="Promijeni cijenu/povezivanje">🔍</button>`;
+            html += ` <button class="btn-povezi" onclick="otvoriPoveziNovi(${idx})" title="Promijeni cijenu/povezivanje">🔍</button>`;
         } else {
             html += `<input type="number" class="cijena-input" step="any" min="0" 
                 value="${a.cijena || ''}" placeholder="0.000"
                 onchange="azurirajCijenuNovi(${idx}, this.value)">`;
-            html += ` <button class="btn-povezi" onclick="otvoriPovezi(${idx})" title="Nađi u cjenovniku">🔍</button>`;
+            html += ` <button class="btn-povezi" onclick="otvoriPoveziNovi(${idx})" title="Nađi u cjenovniku">🔍</button>`;
         }
         
         html += `</td>
@@ -879,14 +873,33 @@ function azurirajCijenuNovi(index, vrijednost) {
 }
 
 // ==================== POVEZIVANJE SA CJENOVNIKOM ====================
-function otvoriPovezi(idx) {
-    povezivanjeIndex = idx;
+function otvoriPoveziNovi(idx) {
+    povezivanjeKontekst = { tip: 'novi', index: idx };
     const a = trenutniPopis.artikli[idx];
     
     document.getElementById('poveziTrenutni').innerHTML = `
         <div class="povezi-trenutni">
             <strong>Tvoj artikal:</strong> ${a.naziv}<br>
             <strong>Trenutna cijena:</strong> ${a.cijena > 0 ? a.cijena.toFixed(3) + ' €' : 'nije postavljena'}
+        </div>
+    `;
+    
+    document.getElementById('poveziSearch').value = a.naziv.split(' ')[0] || '';
+    renderPoveziLista();
+    showModal('poveziModal');
+    setTimeout(() => document.getElementById('poveziSearch').focus(), 100);
+}
+
+function otvoriPoveziPostojeci(idx) {
+    povezivanjeKontekst = { tip: 'postojeci', index: idx };
+    const lokal = getLokal(prikazanLokalId);
+    const a = lokal.popisi[prikazanPopisIndex].artikli[idx];
+    
+    document.getElementById('poveziTrenutni').innerHTML = `
+        <div class="povezi-trenutni">
+            <strong>Tvoj artikal:</strong> ${a.naziv}<br>
+            <strong>Trenutna cijena:</strong> ${a.cijena > 0 ? a.cijena.toFixed(3) + ' €' : 'nije postavljena'}<br>
+            <span style="color:#6f42c1;font-size:12px;">⚠️ Ovo je sačuvani popis — izmjena mijenja cijenu SAMO u ovom popisu, a mapiranje se pamti za buduće.</span>
         </div>
     `;
     
@@ -914,7 +927,6 @@ function renderPoveziLista() {
         return;
     }
     
-    // Ograniči na 50 rezultata
     const prikaz = filtered.slice(0, 50);
     
     let html = '';
@@ -939,55 +951,87 @@ function renderPoveziLista() {
 }
 
 async function odaberiArtikal(idxCj) {
-    if (povezivanjeIndex === null) return;
+    if (!povezivanjeKontekst) return;
     const cj = data.cjenovnik[idxCj];
-    const a = trenutniPopis.artikli[povezivanjeIndex];
+    let artikal;
     
-    // Postavi cijenu u popis
-    a.cijena = cj.cijena;
-    a.pronadjena = true;
-    a.kolicina = a.visak - a.manjak;
-    a.vrijednost = a.kolicina * a.cijena;
-    
-    // Zapamti alias — dodaj naziv iz popisa u aliasе cjenovnika
-    if (!cj.aliasi) cj.aliasi = [];
-    const normTrenutni = normalize(a.naziv);
-    const vecPostoji = cj.aliasi.some(al => normalize(al) === normTrenutni);
-    if (!vecPostoji && normTrenutni !== normalize(cj.naziv)) {
-        cj.aliasi.push(a.naziv);
+    if (povezivanjeKontekst.tip === 'novi') {
+        artikal = trenutniPopis.artikli[povezivanjeKontekst.index];
+    } else {
+        const lokal = getLokal(prikazanLokalId);
+        artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
+    // Postavi cijenu
+    artikal.cijena = cj.cijena;
+    artikal.pronadjena = true;
+    artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
+    artikal.vrijednost = artikal.kolicina * artikal.cijena;
+    
+    // ** KLJUČNO: Odmah zapamti mapiranje u cjenovniku **
+    if (!cj.aliasi) cj.aliasi = [];
+    const normTrenutni = normalize(artikal.naziv);
+    const vecPostoji = cj.aliasi.some(al => normalize(al) === normTrenutni);
+    if (!vecPostoji && normTrenutni !== normalize(cj.naziv)) {
+        cj.aliasi.push(artikal.naziv);
+    }
+    
+    // ** ODMAH SAČUVAJ U CLOUD **
     await saveToCloud();
+    
     closeModal('poveziModal');
-    povezivanjeIndex = null;
-    renderPreviewNovi();
+    povezivanjeKontekst = null;
+    
+    if (prikazanLokalId !== null && prikazanPopisIndex !== null) {
+        renderPopisContent();
+        renderMain();
+    }
+    if (trenutniPopis) {
+        renderPreviewNovi();
+    }
+    
+    alert(`✅ Mapirano!\n\n"${artikal.naziv}" → "${cj.naziv}"\nCijena: ${cj.cijena.toFixed(3)} €\n\nOvo mapiranje je sačuvano i prepoznavat će se u svim budućim popisima.`);
 }
 
 function upisiCijenuRucno() {
-    if (povezivanjeIndex === null) return;
-    const a = trenutniPopis.artikli[povezivanjeIndex];
-    const cijena = prompt(`Upiši cijenu za "${a.naziv}" (€):`, a.cijena || 0);
+    if (!povezivanjeKontekst) return;
+    let artikal;
+    
+    if (povezivanjeKontekst.tip === 'novi') {
+        artikal = trenutniPopis.artikli[povezivanjeKontekst.index];
+    } else {
+        const lokal = getLokal(prikazanLokalId);
+        artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
+    }
+    
+    const cijena = prompt(`Upiši cijenu za "${artikal.naziv}" (€):`, artikal.cijena || 0);
     if (cijena === null) return;
     const c = parseFloat(cijena) || 0;
-    a.cijena = c;
-    a.pronadjena = c > 0;
-    a.kolicina = a.visak - a.manjak;
-    a.vrijednost = a.kolicina * a.cijena;
+    artikal.cijena = c;
+    artikal.pronadjena = c > 0;
+    artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
+    artikal.vrijednost = artikal.kolicina * artikal.cijena;
+    
     closeModal('poveziModal');
-    povezivanjeIndex = null;
-    renderPreviewNovi();
+    povezivanjeKontekst = null;
+    
+    if (prikazanLokalId !== null && prikazanPopisIndex !== null) {
+        renderPopisContent();
+    }
+    if (trenutniPopis) {
+        renderPreviewNovi();
+    }
 }
 
 async function sacuvajCijeneICjenovnik() {
     if (!trenutniPopis) return;
     
-    // Nađi sve artikle koji imaju cijenu ali nisu u cjenovniku (nove)
+    // Dodaj samo artikle koji imaju cijenu a nisu mapirani na postojeći
     const zaDodati = trenutniPopis.artikli.filter(a => a.cijena > 0 && !a.pronadjena);
     
     if (zaDodati.length === 0) {
-        // Provjeri i da li ima mapiranja (aliasa) koja su dodata
         await saveToCloud();
-        alert('✅ Sve je već sačuvano. Nema novih cijena za dodati.');
+        alert('✅ Nema novih cijena. Sve je već sačuvano u cjenovniku (uključujući mapiranja).');
         return;
     }
     
@@ -1077,7 +1121,8 @@ function renderPopisContent() {
     const lokal = getLokal(prikazanLokalId);
     const p = lokal.popisi[prikazanPopisIndex];
     const c = document.getElementById('popisContent');
-    let html = '<table class="artikal-table"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena €</th><th>VRIJEDNOST €</th><th class="no-print">Akcije</th></tr></thead><tbody>';
+    let html = '<div class="info-box info-info" style="margin-bottom:10px;font-size:13px;">💡 Klikni <strong>🔍</strong> da povežeš sa cjenovnikom (mijenja cijenu u ovom popisu + pamti mapiranje za buduće).</div>';
+    html += '<table class="artikal-table"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena €</th><th>VRIJEDNOST €</th><th class="no-print">Akcije</th></tr></thead><tbody>';
     
     let ukupnoManjak = 0;
     (p.artikli || []).forEach((a, idx) => {
@@ -1095,8 +1140,9 @@ function renderPopisContent() {
             <td>${cijena.toFixed(3)} €</td>
             <td style="font-weight:bold;color:${bojaVrijednosti(v)};">${v.toFixed(2)} €</td>
             <td class="no-print">
-                <button class="btn btn-sm btn-info" onclick="urediPopisArtikal(${idx})">✏️</button>
-                <button class="btn btn-sm btn-danger" onclick="obrisiPopisArtikal(${idx})">🗑</button>
+                <button class="btn btn-sm btn-info" onclick="urediPopisArtikal(${idx})" title="Uredi ime/cijenu">✏️</button>
+                <button class="btn-povezi" onclick="otvoriPoveziPostojeci(${idx})" title="Poveži sa cjenovnikom (trajno mapiranje)">🔍</button>
+                <button class="btn btn-sm btn-danger" onclick="obrisiPopisArtikal(${idx})" title="Obriši">🗑</button>
             </td>
         </tr>`;
     });
@@ -1253,7 +1299,7 @@ function renderCjenovnik() {
     }
     
     let html = `<p style="margin-bottom:10px;color:#666;">Ukupno: ${data.cjenovnik.length} artikala</p>`;
-    html += '<table class="artikal-table"><thead><tr><th>Naziv</th><th>Aliasi</th><th>Grupa</th><th>J.M.</th><th>Cijena</th><th>Akcije</th></tr></thead><tbody>';
+    html += '<table class="artikal-table"><thead><tr><th>Naziv</th><th>Aliasi (mapirani nazivi)</th><th>Grupa</th><th>J.M.</th><th>Cijena</th><th>Akcije</th></tr></thead><tbody>';
     filtered.forEach(a => {
         const idx = data.cjenovnik.indexOf(a);
         const aliasiStr = (a.aliasi && a.aliasi.length > 0) ? a.aliasi.join(', ') : '-';
@@ -1394,6 +1440,7 @@ function ucitajCjenovnik(event) {
                 if (existing >= 0) {
                     data.cjenovnik[existing].cijena = cijena;
                     data.cjenovnik[existing].naziv = naziv;
+                    if (!data.cjenovnik[existing].aliasi) data.cjenovnik[existing].aliasi = [];
                 } else {
                     data.cjenovnik.push({ naziv, grupa: '', jm: 'KOM.', cijena, aliasi: [] });
                     dodano++;
@@ -1420,7 +1467,6 @@ async function ocistiDuplikate() {
     }
     
     const originalCount = data.cjenovnik.length;
-    
     const grupe = {};
     data.cjenovnik.forEach((a, idx) => {
         const key = normalize(a.naziv);
@@ -1482,26 +1528,21 @@ async function ocistiDuplikate() {
 
 async function potvrdiBrisanjeDuplikata() {
     if (!window._duplikatiGrupe) return;
-    
     const indeksiZaBrisanje = [];
     window._duplikatiGrupe.forEach(grupa => {
         for (let i = 1; i < grupa.length; i++) {
             indeksiZaBrisanje.push(grupa[i].originalIndex);
         }
     });
-    
     indeksiZaBrisanje.sort((a, b) => b - a);
     indeksiZaBrisanje.forEach(idx => {
         data.cjenovnik.splice(idx, 1);
     });
-    
     await saveToCloud();
     renderCjenovnik();
-    
     const modal = document.getElementById('duplikatiPreviewModal');
     if (modal) modal.remove();
     window._duplikatiGrupe = null;
-    
     alert(`✅ Obrisano ${indeksiZaBrisanje.length} duplikata!\n\nUkupno u cjenovniku sada: ${data.cjenovnik.length}`);
 }
 
