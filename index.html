@@ -387,7 +387,7 @@
         </div>
         <div id="managerContent"></div>
         
-        <!-- NOVA DUGMAD ZA MENADŽER -->
+        <!-- DUGMAD ZA MENADŽER -->
         <div style="display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;" class="no-print">
             <button onclick="osvjeziCijeneUMenadzeru()" class="btn btn-warning" style="flex:1;background:#e67e22;color:white;padding:12px;">🔄 Osvježi cijene iz cjenovnika</button>
             <button onclick="dodajSveNedostajuceUCjenovnik()" class="btn btn-success" style="flex:1;padding:12px;">➕ Dodaj nedostajuće u cjenovnik</button>
@@ -1261,7 +1261,7 @@ async function dodajNoviArtikalIzPovezi() {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    const naziv = prompt('Naziv za cjenovnik (možeš promijeniti):', artikal.naziv);
+    const naziv = prompt('Upiši tačan naziv za cjenovnik (ovo će biti glavni naziv):', artikal.naziv);
     if (naziv === null) return;
     if (!naziv.trim()) { alert('Naziv ne može biti prazan!'); return; }
     
@@ -1285,7 +1285,7 @@ async function dodajNoviArtikalIzPovezi() {
             grupa: '',
             jm: artikal.jm || 'KOM.',
             cijena: cijena,
-            aliasi: []
+            aliasi: [artikal.naziv]
         });
     }
     
@@ -1307,7 +1307,7 @@ async function dodajNoviArtikalIzPovezi() {
         renderPreviewNovi();
     }
     
-    alert(`✅ Dodato u cjenovnik!\n\n"${naziv.trim()}" — ${cijena.toFixed(3)} €\n\nArtikal je sada u cjenovniku.`);
+    alert(`✅ Dodato u cjenovnik!\n\nGlavni naziv: "${naziv.trim()}"\nCijena: ${cijena.toFixed(3)} €\n\nOriginalni naziv "${artikal.naziv}" je sačuvan kao alias.`);
 }
 
 async function sacuvajCijeneICjenovnik() {
@@ -2140,19 +2140,22 @@ function renderManager() {
         return;
     }
     
-    // ** GRUPISANJE PO NORMALIZOVANOM NAZIVU IZ POPISA **
+    // ** GRUPISANJE PO CJENOVNIČKOM ARTIKLU **
     const artikliMap = {};
     
     popisi.forEach((p, pIndex) => {
         (p.artikli || []).forEach(a => {
             if (!a.naziv) return;
             
-            const key = normalize(a.naziv);
+            const cjArtikal = nadjiCijenu(a.naziv);
+            const key = cjArtikal ? normalize(cjArtikal.naziv) : normalize(a.naziv);
             if (!key) return;
+            
+            const prikazniNaziv = cjArtikal ? cjArtikal.naziv : a.naziv;
             
             if (!artikliMap[key]) {
                 artikliMap[key] = {
-                    prikazniNaziv: a.naziv,
+                    prikazniNaziv: prikazniNaziv,
                     poMjesecu: {}
                 };
             }
@@ -2174,7 +2177,7 @@ function renderManager() {
     
     let html = `<h3 style="margin-bottom:10px;">${lokal.naziv} — ${sektor} — ${godina}</h3>`;
     html += `<div class="info-box info-info" style="font-size:12px;margin-bottom:10px;">
-        💡 Artikli su grupisani po <strong>nazivu iz popisa</strong> (ignorišu se kvačice, razmaci, velika/mala slova).
+        💡 Artikli su grupisani po <strong>cjenovničkom artiklu</strong>. Isti artikal sa različitim nazivima (kvačice, razmaci) prikazuje se kao <strong>jedan red</strong>.
     </div>`;
     html += '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr><th style="min-width:180px;">Artikal</th>';
     popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>€</small></th>`; });
