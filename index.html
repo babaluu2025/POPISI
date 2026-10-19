@@ -1025,8 +1025,11 @@ function ucitajExcel(event) {
                 if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
                 
                 const jm = idxJM >= 0 ? toStr(row[idxJM]).trim() : '';
-                const manjak = idxManjak >= 0 ? parseBroj(row[idxManjak]) : 0;
-                const visak = idxVisak >= 0 ? parseBroj(row[idxVisak]) : 0;
+                // Apsolutne vrijednosti za Manjak i Višak
+                const manjak = idxManjak >= 0 ? Math.abs(parseBroj(row[idxManjak])) : 0;
+                const visak = idxVisak >= 0 ? Math.abs(parseBroj(row[idxVisak])) : 0;
+                
+                // Konačno je Višak - Manjak
                 const kolicina = visak - manjak;
                 
                 let cijena = 0;
@@ -1221,16 +1224,16 @@ async function odaberiArtikal(idxCj) {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    // ** OVDJE SE MIJENJA IME ARTIKLA U POPISU **
+    // Prepiši ime u popisu
     artikal.naziv = cj.naziv; 
     artikal.cijena = cj.cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
-    // Mapiranje (Alias) se dodaje u cjenovnik ako već nije tu
+    // Mapiranje (Alias)
     if (!cj.aliasi) cj.aliasi = [];
-    const normTrenutni = normalize(artikal.naziv); // sada je to cj.naziv
+    const normTrenutni = normalize(artikal.naziv);
     const vecPostoji = cj.aliasi.some(al => normalize(al) === normTrenutni);
     if (!vecPostoji && normTrenutni !== normalize(cj.naziv)) {
         cj.aliasi.push(artikal.naziv);
@@ -1290,12 +1293,12 @@ async function sacuvajEditCjenovnik() {
         aliasi.push(cj.naziv);
     }
     
-    // ** Ažuriraj cjenovnik **
+    // Ažuriraj cjenovnik
     cj.naziv = naziv;
     cj.cijena = cijena;
     cj.aliasi = aliasi;
     
-    // ** Ažuriraj trenutni popis **
+    // Ažuriraj trenutni popis
     let artikal;
     if (povezivanjeKontekst.tip === 'novi') {
         artikal = trenutniPopis.artikli[povezivanjeKontekst.index];
@@ -1304,11 +1307,16 @@ async function sacuvajEditCjenovnik() {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    artikal.naziv = naziv; // Prepisujemo ime u popisu!
+    artikal.naziv = naziv; 
     artikal.cijena = cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
+    
+    // Dodaj naziv iz popisa u aliasе ako već nije
+    if (!aliasi.some(al => normalize(al) === normalize(artikal.naziv)) && normalize(artikal.naziv) !== normalize(naziv)) {
+        cj.aliasi.push(artikal.naziv);
+    }
     
     await saveToCloud();
     
@@ -1336,10 +1344,8 @@ async function obrisiArtikalIzCjenovnika() {
     
     if (!confirm(`⚠️ Obrisati artikal "${cj.naziv}" iz cjenovnika?\n\nOn će nestati iz cjenovnika, a u tvom trenutnom popisu će ostati bez cijene (postat će crven) dok ga ponovo ne povežeš sa nekim drugim artiklom.`)) return;
     
-    // Briši iz cjenovnika
     data.cjenovnik.splice(idxCj, 1);
     
-    // Ažuriraj popis (artikal ostaje, ali gubi cijenu)
     let artikal;
     if (povezivanjeKontekst.tip === 'novi') {
         artikal = trenutniPopis.artikli[povezivanjeKontekst.index];
