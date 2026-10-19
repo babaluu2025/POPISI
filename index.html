@@ -415,7 +415,7 @@
         
         <!-- DUGMAD ZA MENADŽER -->
         <div style="display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;" class="no-print">
-            <button onclick="osvjeziCijeneUMenadzeru()" class="btn btn-warning" style="flex:1;background:#e67e22;color:white;padding:12px;">🔄 Osvježi cijene iz cjenovnika</button>
+            <button id="btnOsvjezi" onclick="osvjeziCijeneUMenadzeru()" class="btn btn-warning" style="flex:1;background:#e67e22;color:white;padding:12px;">🔄 Osvježi cijene iz cjenovnika</button>
             <button onclick="dodajSveNedostajuceUCjenovnik()" class="btn btn-success" style="flex:1;padding:12px;">➕ Dodaj nedostajuće u cjenovnik</button>
         </div>
         
@@ -2349,27 +2349,28 @@ async function osvjeziCijeneUMenadzeru() {
     const lokal = getLokal(lokalId);
     
     if (!lokal) return;
-    if (!confirm("Ovo će proći kroz SVE sačuvane popise ovog lokala.\n\nIspravit će stare greške (duple minuse) i ponovo izračunati tačne vrijednosti na osnovu Manjka, Viška i Cijene.\n\nNastaviti?")) return;
+    if (!confirm("Ovo će proći kroz SVE sačuvane popise ovog lokala.\n\nIspravit će stare greške i ponovo izračunati tačne vrijednosti na osnovu Manjka, Viška i Cijene.\n\nNastaviti?")) return;
     
     let promijenjeno = 0;
     
+    // 1. Prolazimo kroz sve popise i ispravljamo matematiku
     lokal.popisi.forEach(popis => {
         popis.artikli.forEach(artikal => {
-            // 1. Uzimamo apsolutne vrijednosti
+            // Uzimamo apsolutne vrijednosti (brišemo duple minuse)
             const absManjak = Math.abs(artikal.manjak || 0);
             const absVisak = Math.abs(artikal.visak || 0);
             
-            // 2. TAČNA FORMULA: Višak - Manjak
+            // Tačna formula: Višak - Manjak
             const ispravnoKolicina = absVisak - absManjak;
             
-            // 3. Ažuriramo cijenu
+            // Ažuriramo cijenu ako je nađena u cjenovniku
             const cj = nadjiCijenu(artikal.naziv);
             if (cj) {
                 artikal.cijena = cj.cijena;
                 artikal.pronadjena = true;
             }
             
-            // 4. Upisujemo ispravne vrijednosti
+            // Upisujemo ispravne vrijednosti
             artikal.manjak = absManjak;
             artikal.visak = absVisak;
             artikal.kolicina = ispravnoKolicina;
@@ -2379,11 +2380,33 @@ async function osvjeziCijeneUMenadzeru() {
         });
     });
     
-    await saveToCloud();
+    // 2. Prikazujemo poruku da je u toku čuvanje
+    const dugme = document.getElementById('btnOsvjezi');
+    if (dugme) {
+        const originalText = dugme.innerHTML;
+        dugme.innerHTML = '⏳ Čuvam u bazu...';
+        dugme.disabled = true;
+
+        // 3. Prisilno čuvamo u bazu i ČEKAMO da se završi
+        await saveToCloud();
+        
+        // 4. Vraćamo dugme na staro
+        dugme.innerHTML = originalText;
+        dugme.disabled = false;
+    } else {
+        await saveToCloud();
+    }
+
+    // 5. Ponovo crtamo ekran
     renderManager();
     renderMain();
     
-    alert(`✅ Sve stare liste su uspješno ispravljene!\n\nObrađeno artikala: ${promijenjeno}\n\nSada su svi manjkovi i viškovi tačno sabrani.`);
+    // 6. Upozorenje ako baza nije sačuvana
+    if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+        alert(`⚠️ Upozorenje: Aplikacija nije povezana sa internetom ili bazom!\n\nIzmjene su sačuvane samo na tvom računaru (LocalStorage), ali ne i na serveru.\n\nAko osvježiš stranicu (F5), možda ćeš izgubiti promjene.`);
+    } else {
+        alert(`✅ Uspješno sačuvano!\n\nObrađeno artikala: ${promijenjeno}\n\nSada će se promjene vidjeti i nakon osvježavanja stranice (F5).`);
+    }
 }
 
 async function dodajSveNedostajuceUCjenovnik() {
