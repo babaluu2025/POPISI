@@ -1025,11 +1025,12 @@ function ucitajExcel(event) {
                 if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
                 
                 const jm = idxJM >= 0 ? toStr(row[idxJM]).trim() : '';
-                // Uzimamo apsolutne vrijednosti da se riješimo duplih minusa iz Excela
+                
+                // ** Uzimamo apsolutne vrijednosti (brišemo minus iz Excela ako postoji) **
                 const manjak = idxManjak >= 0 ? Math.abs(parseBroj(row[idxManjak])) : 0;
                 const visak = idxVisak >= 0 ? Math.abs(parseBroj(row[idxVisak])) : 0;
                 
-                // Ispravno računamo Konačno: Višak - Manjak
+                // ** TAČNA FORMULA: Višak - Manjak **
                 const kolicina = visak - manjak;
                 
                 let cijena = 0;
@@ -2354,21 +2355,21 @@ async function osvjeziCijeneUMenadzeru() {
     
     lokal.popisi.forEach(popis => {
         popis.artikli.forEach(artikal => {
-            // 1. Uzimamo apsolutne vrijednosti (brišemo stare greške sa minusima)
+            // 1. Uzimamo apsolutne vrijednosti
             const absManjak = Math.abs(artikal.manjak || 0);
             const absVisak = Math.abs(artikal.visak || 0);
             
-            // 2. Uvijek ispravno računamo konačno: Višak - Manjak
+            // 2. TAČNA FORMULA: Višak - Manjak
             const ispravnoKolicina = absVisak - absManjak;
             
-            // 3. Ažuriramo cijenu ako je ima u cjenovniku
+            // 3. Ažuriramo cijenu
             const cj = nadjiCijenu(artikal.naziv);
             if (cj) {
                 artikal.cijena = cj.cijena;
                 artikal.pronadjena = true;
             }
             
-            // 4. Upisujemo ispravne vrijednosti nazad u popis
+            // 4. Upisujemo ispravne vrijednosti
             artikal.manjak = absManjak;
             artikal.visak = absVisak;
             artikal.kolicina = ispravnoKolicina;
