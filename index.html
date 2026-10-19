@@ -1310,8 +1310,6 @@ async function sacuvajEditCjenovnik() {
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
-    // Dodaj naziv iz popisa u aliasе ako već nije (iako smo ga sada prepisali, dobro je da ostane zapisano)
-    
     await saveToCloud();
     
     closeModal('editCjenovnikModal');
@@ -1411,7 +1409,7 @@ async function dodajNoviArtikalIzPovezi() {
         });
     }
     
-    artikal.naziv = naziv.trim(); // Prepisujemo ime u popisu
+    artikal.naziv = naziv.trim();
     artikal.cijena = cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
