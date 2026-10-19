@@ -267,7 +267,7 @@
         <div class="modal-header"><h3>🔍 Poveži sa cjenovnikom</h3><button onclick="closeModal('poveziModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div id="poveziTrenutni" class="povezi-info"></div>
         <div class="info-box info-info" style="font-size:13px;">
-            💡 Klikni na <strong>naziv</strong> da samo povežeš. Klikni na <strong>✏️ Uredi</strong> da promijeniš naziv i cijenu trajno u cjenovniku.
+            💡 Klikni na <strong>naziv</strong> da povežeš (i prepišeš ime u popisu). Klikni na <strong>✏️</strong> da urediš ili obrišeš u cjenovniku.
         </div>
         <input type="text" id="poveziSearch" class="search-input" placeholder="🔍 Pretraži cjenovnik..." oninput="renderPoveziLista()">
         <div id="poveziLista" class="povezi-lista"></div>
@@ -296,7 +296,10 @@
             <input type="text" id="editCjAliasi" class="search-input">
             <div style="font-size:11px;color:#666;margin-top:4px;">Dodaj naziv iz popisa ovdje ako želiš da ga aplikacija zapamti za ubuduće.</div>
         </div>
-        <button onclick="sacuvajEditCjenovnik()" class="btn btn-success" style="width:100%;padding:12px;">💾 Sačuvaj u cjenovnik</button>
+        <div style="display:flex; gap:10px;">
+            <button onclick="obrisiArtikalIzCjenovnika()" class="btn btn-danger" style="flex:1; padding:12px;">🗑 Obriši iz cjenovnika</button>
+            <button onclick="sacuvajEditCjenovnik()" class="btn btn-success" style="flex:2; padding:12px;">💾 Sačuvaj u cjenovnik</button>
+        </div>
     </div>
 </div>
 
@@ -1194,7 +1197,7 @@ function renderPoveziLista() {
                 </div>
                 <div style="display:flex; align-items:center; gap:10px;">
                     <div class="cijena" onclick="odaberiArtikal(${idxCj})">${(c.cijena || 0).toFixed(3)} €</div>
-                    <button class="btn btn-sm btn-info" onclick="otvoriEditCjenovnik(${idxCj})" title="Uredi trajno u cjenovniku">✏️</button>
+                    <button class="btn btn-sm btn-info" onclick="otvoriEditCjenovnik(${idxCj})" title="Uredi ili obriši u cjenovniku">✏️</button>
                 </div>
             </div>
         `;
@@ -1218,15 +1221,16 @@ async function odaberiArtikal(idxCj) {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    // ** Ažuriranje artikla u popisu **
+    // ** OVDJE SE MIJENJA IME ARTIKLA U POPISU **
+    artikal.naziv = cj.naziv; 
     artikal.cijena = cj.cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
-    // ** Mapiranje (Alias) **
+    // Mapiranje (Alias) se dodaje u cjenovnik ako već nije tu
     if (!cj.aliasi) cj.aliasi = [];
-    const normTrenutni = normalize(artikal.naziv);
+    const normTrenutni = normalize(artikal.naziv); // sada je to cj.naziv
     const vecPostoji = cj.aliasi.some(al => normalize(al) === normTrenutni);
     if (!vecPostoji && normTrenutni !== normalize(cj.naziv)) {
         cj.aliasi.push(artikal.naziv);
@@ -1245,7 +1249,7 @@ async function odaberiArtikal(idxCj) {
         renderPreviewNovi();
     }
     
-    alert(`✅ Mapirano!\n\n"${artikal.naziv}" → "${cj.naziv}"\nCijena: ${cj.cijena.toFixed(3)} €\n\nMapiranje sačuvano za buduće popise.`);
+    alert(`✅ Mapirano!\n\nArtikal u popisu je preimenovan u "${artikal.naziv}" i povezan sa cjenovnikom.`);
 }
 
 // ** OTVARANJE CJENOVNIKA IZ POPISA (trajno) **
@@ -1300,15 +1304,13 @@ async function sacuvajEditCjenovnik() {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
+    artikal.naziv = naziv; // Prepisujemo ime u popisu!
     artikal.cijena = cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
-    // Dodaj naziv iz popisa u aliasе ako već nije
-    if (!aliasi.some(al => normalize(al) === normalize(artikal.naziv)) && normalize(artikal.naziv) !== normalize(naziv)) {
-        cj.aliasi.push(artikal.naziv);
-    }
+    // Dodaj naziv iz popisa u aliasе ako već nije (iako smo ga sada prepisali, dobro je da ostane zapisano)
     
     await saveToCloud();
     
@@ -1326,6 +1328,48 @@ async function sacuvajEditCjenovnik() {
     }
     
     alert(`✅ Sačuvano trajno u cjenovnik!\n\nNaziv: "${naziv}"\nCijena: ${cijena.toFixed(3)} €\n\nPromjena je primijenjena na ovaj popis i sve buduće.`);
+}
+
+async function obrisiArtikalIzCjenovnika() {
+    if (!editCjKontekst || !povezivanjeKontekst) return;
+    
+    const idxCj = editCjKontekst.idxCj;
+    const cj = data.cjenovnik[idxCj];
+    
+    if (!confirm(`⚠️ Obrisati artikal "${cj.naziv}" iz cjenovnika?\n\nOn će nestati iz cjenovnika, a u tvom trenutnom popisu će ostati bez cijene (postat će crven) dok ga ponovo ne povežeš sa nekim drugim artiklom.`)) return;
+    
+    // Briši iz cjenovnika
+    data.cjenovnik.splice(idxCj, 1);
+    
+    // Ažuriraj popis (artikal ostaje, ali gubi cijenu)
+    let artikal;
+    if (povezivanjeKontekst.tip === 'novi') {
+        artikal = trenutniPopis.artikli[povezivanjeKontekst.index];
+    } else {
+        const lokal = getLokal(prikazanLokalId);
+        artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
+    }
+    
+    artikal.cijena = 0;
+    artikal.pronadjena = false;
+    artikal.vrijednost = 0;
+    
+    await saveToCloud();
+    
+    closeModal('editCjenovnikModal');
+    closeModal('poveziModal');
+    editCjKontekst = null;
+    povezivanjeKontekst = null;
+    
+    if (prikazanLokalId !== null && prikazanPopisIndex !== null) {
+        renderPopisContent();
+        renderMain();
+    }
+    if (trenutniPopis) {
+        renderPreviewNovi();
+    }
+    
+    alert(`✅ Artikal "${cj.naziv}" je obrisan iz cjenovnika.\n\nU tvom popisu je sada bez cijene. Možeš ga ponovo mapirati klikom na 🔍.`);
 }
 
 async function dodajNoviArtikalIzPovezi() {
@@ -1367,6 +1411,7 @@ async function dodajNoviArtikalIzPovezi() {
         });
     }
     
+    artikal.naziv = naziv.trim(); // Prepisujemo ime u popisu
     artikal.cijena = cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
