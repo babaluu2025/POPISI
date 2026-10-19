@@ -1225,20 +1225,20 @@ async function odaberiArtikal(idxCj) {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    // Prepiši ime u popisu
-    artikal.naziv = cj.naziv; 
+    // ** KLJUČNO: PRVO zapamti STARI naziv kao alias **
+    const stariNaziv = artikal.naziv;
+    if (!cj.aliasi) cj.aliasi = [];
+    const normStari = normalize(stariNaziv);
+    if (normStari !== normalize(cj.naziv) && !cj.aliasi.some(al => normalize(al) === normStari)) {
+        cj.aliasi.push(stariNaziv);
+    }
+    
+    // ** Onda prepiši ime u popisu **
+    artikal.naziv = cj.naziv;
     artikal.cijena = cj.cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
-    
-    // Mapiranje (Alias)
-    if (!cj.aliasi) cj.aliasi = [];
-    const normTrenutni = normalize(artikal.naziv);
-    const vecPostoji = cj.aliasi.some(al => normalize(al) === normTrenutni);
-    if (!vecPostoji && normTrenutni !== normalize(cj.naziv)) {
-        cj.aliasi.push(artikal.naziv);
-    }
     
     await saveToCloud();
     
@@ -1253,7 +1253,7 @@ async function odaberiArtikal(idxCj) {
         renderPreviewNovi();
     }
     
-    alert(`✅ Mapirano!\n\nArtikal u popisu je preimenovan u "${artikal.naziv}" i povezan sa cjenovnikom.`);
+    alert(`✅ Mapirano!\n\n"${stariNaziv}" → "${artikal.naziv}"\n\nStari naziv je sačuvan kao alias i prepoznat će se u budućim popisima.`);
 }
 
 // ** OTVARANJE CJENOVNIKA IZ POPISA (trajno) **
@@ -1308,16 +1308,17 @@ async function sacuvajEditCjenovnik() {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
+    // Zapamti STARI naziv iz popisa prije nego ga prepišeš
+    const stariNaziv = artikal.naziv;
+    if (!aliasi.some(al => normalize(al) === normalize(stariNaziv)) && normalize(stariNaziv) !== normalize(naziv)) {
+        cj.aliasi.push(stariNaziv);
+    }
+    
     artikal.naziv = naziv; 
     artikal.cijena = cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
-    
-    // Dodaj naziv iz popisa u aliasе ako već nije
-    if (!aliasi.some(al => normalize(al) === normalize(artikal.naziv)) && normalize(artikal.naziv) !== normalize(naziv)) {
-        cj.aliasi.push(artikal.naziv);
-    }
     
     await saveToCloud();
     
@@ -1334,7 +1335,7 @@ async function sacuvajEditCjenovnik() {
         renderPreviewNovi();
     }
     
-    alert(`✅ Sačuvano trajno u cjenovnik!\n\nNaziv: "${naziv}"\nCijena: ${cijena.toFixed(3)} €\n\nPromjena je primijenjena na ovaj popis i sve buduće.`);
+    alert(`✅ Sačuvano trajno u cjenovnik!\n\nNaziv: "${naziv}"\nCijena: ${cijena.toFixed(3)} €\n\nStari naziv "${stariNaziv}" je sačuvan kao alias i prepoznat će se u budućim popisima.`);
 }
 
 async function obrisiArtikalIzCjenovnika() {
@@ -1388,7 +1389,9 @@ async function dodajNoviArtikalIzPovezi() {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    const naziv = prompt('Upiši tačan naziv za cjenovnik (ovo će biti glavni naziv):', artikal.naziv);
+    const stariNaziv = artikal.naziv;
+    
+    const naziv = prompt('Upiši tačan naziv za cjenovnik (ovo će biti glavni naziv):', stariNaziv);
     if (naziv === null) return;
     if (!naziv.trim()) { alert('Naziv ne može biti prazan!'); return; }
     
@@ -1402,9 +1405,9 @@ async function dodajNoviArtikalIzPovezi() {
         if (!confirm(`Artikal "${naziv.trim()}" već postoji u cjenovniku sa cijenom ${data.cjenovnik[existingIdx].cijena.toFixed(3)} €.\n\nAžurirati cijenu na ${cijena.toFixed(3)} €?`)) return;
         data.cjenovnik[existingIdx].cijena = cijena;
         if (!data.cjenovnik[existingIdx].aliasi) data.cjenovnik[existingIdx].aliasi = [];
-        const normOrig = normalize(artikal.naziv);
-        if (normOrig !== normalize(naziv.trim()) && !data.cjenovnik[existingIdx].aliasi.some(al => normalize(al) === normOrig)) {
-            data.cjenovnik[existingIdx].aliasi.push(artikal.naziv);
+        // Zapamti stari naziv kao alias
+        if (normalize(stariNaziv) !== normalize(naziv.trim()) && !data.cjenovnik[existingIdx].aliasi.some(al => normalize(al) === normalize(stariNaziv))) {
+            data.cjenovnik[existingIdx].aliasi.push(stariNaziv);
         }
     } else {
         data.cjenovnik.push({
@@ -1412,7 +1415,7 @@ async function dodajNoviArtikalIzPovezi() {
             grupa: '',
             jm: artikal.jm || 'KOM.',
             cijena: cijena,
-            aliasi: [artikal.naziv]
+            aliasi: [stariNaziv] // Stari naziv ide u aliasе
         });
     }
     
@@ -1435,7 +1438,7 @@ async function dodajNoviArtikalIzPovezi() {
         renderPreviewNovi();
     }
     
-    alert(`✅ Dodato u cjenovnik!\n\nGlavni naziv: "${naziv.trim()}"\nCijena: ${cijena.toFixed(3)} €\n\nOriginalni naziv "${artikal.naziv}" je sačuvan kao alias.`);
+    alert(`✅ Dodato u cjenovnik!\n\nGlavni naziv: "${naziv.trim()}"\nCijena: ${cijena.toFixed(3)} €\n\nOriginalni naziv "${stariNaziv}" je sačuvan kao alias.`);
 }
 
 async function sacuvajCijeneICjenovnik() {
