@@ -90,6 +90,7 @@
         #editPopisArtikalModal { z-index: 1200; }
         #duplikatiPreviewModal { z-index: 1300; }
         #sifraModal { z-index: 1400; }
+        #editCjenovnikModal { z-index: 1500; }
 
         .modal-content { background: white; padding: 25px; border-radius: 10px; max-width: 1200px; width: 95%; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
@@ -107,11 +108,12 @@
         .info-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
 
         .povezi-lista { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; margin-top: 10px; }
-        .povezi-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .povezi-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .povezi-item:hover { background: #eef2ff; }
         .povezi-item:last-child { border-bottom: none; }
-        .povezi-item .naziv { font-weight: bold; }
-        .povezi-item .cijena { color: #28a745; font-weight: bold; }
+        .povezi-item .naziv { font-weight: bold; cursor: pointer; }
+        .povezi-item .cijena { color: #28a745; font-weight: bold; cursor: pointer;}
+        .povezi-item .akcije { display: flex; gap: 5px; }
         .povezi-info { background: #eef2ff; padding: 12px; border-radius: 6px; margin-bottom: 12px; }
         .povezi-trenutni { font-size: 15px; }
         .povezi-trenutni strong { color: #6f42c1; }
@@ -265,15 +267,36 @@
         <div class="modal-header"><h3>🔍 Poveži sa cjenovnikom</h3><button onclick="closeModal('poveziModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
         <div id="poveziTrenutni" class="povezi-info"></div>
         <div class="info-box info-info" style="font-size:13px;">
-            💡 Klikni na artikal iz cjenovnika → cijena se upisuje i <strong>mapiranje se pamti zauvijek</strong>.
+            💡 Klikni na <strong>naziv</strong> da samo povežeš. Klikni na <strong>✏️ Uredi</strong> da promijeniš naziv i cijenu trajno u cjenovniku.
         </div>
         <input type="text" id="poveziSearch" class="search-input" placeholder="🔍 Pretraži cjenovnik..." oninput="renderPoveziLista()">
         <div id="poveziLista" class="povezi-lista"></div>
         <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
             <button onclick="closeModal('poveziModal')" class="btn btn-secondary" style="flex:1;padding:12px;">Otkaži</button>
-            <button onclick="upisiCijenuRucno()" class="btn btn-warning" style="flex:1;padding:12px;">✏️ Upiši cijenu</button>
-            <button onclick="dodajNoviArtikalIzPovezi()" class="btn btn-success" style="flex:1;padding:12px;">➕ Dodaj kao novi</button>
+            <button onclick="dodajNoviArtikalIzPovezi()" class="btn btn-success" style="flex:1;padding:12px;">➕ Dodaj novi u cjenovnik</button>
         </div>
+    </div>
+</div>
+
+<!-- MODAL ZA EDIT ARTIKLA U CJENOVNIKU (IZ POPISA) -->
+<div id="editCjenovnikModal" class="modal">
+    <div class="modal-content" style="max-width:500px;">
+        <div class="modal-header"><h3>✏️ Uredi artikal u cjenovniku</h3><button onclick="closeModal('editCjenovnikModal')" style="font-size:28px;background:none;border:none;">&times;</button></div>
+        <div id="editCjenovnikInfo" style="margin-bottom:12px;"></div>
+        <div class="form-group">
+            <label>Naziv u cjenovniku:</label>
+            <input type="text" id="editCjNaziv" class="search-input">
+        </div>
+        <div class="form-group">
+            <label>Cijena (€):</label>
+            <input type="number" id="editCjCijena" class="search-input" step="any" min="0">
+        </div>
+        <div class="form-group">
+            <label>Aliasi (drugi nazivi, razdvojeni zarezom):</label>
+            <input type="text" id="editCjAliasi" class="search-input">
+            <div style="font-size:11px;color:#666;margin-top:4px;">Dodaj naziv iz popisa ovdje ako želiš da ga aplikacija zapamti za ubuduće.</div>
+        </div>
+        <button onclick="sacuvajEditCjenovnik()" class="btn btn-success" style="width:100%;padding:12px;">💾 Sačuvaj u cjenovnik</button>
     </div>
 </div>
 
@@ -1155,7 +1178,7 @@ function renderPoveziLista() {
     }
     
     if (filtered.length === 0) {
-        lista.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">Nema rezultata. Probaj drugi pojam ili klikni <strong>➕ Dodaj kao novi</strong> ispod.</div>';
+        lista.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">Nema rezultata. Probaj drugi pojam ili klikni <strong>➕ Dodaj novi u cjenovnik</strong> ispod.</div>';
         return;
     }
     
@@ -1164,12 +1187,15 @@ function renderPoveziLista() {
     prikaz.forEach(c => {
         const idxCj = data.cjenovnik.indexOf(c);
         html += `
-            <div class="povezi-item" onclick="odaberiArtikal(${idxCj})">
-                <div>
+            <div class="povezi-item">
+                <div style="flex:1; cursor:pointer;" onclick="odaberiArtikal(${idxCj})">
                     <div class="naziv">${c.naziv}</div>
                     ${(c.aliasi && c.aliasi.length > 0) ? `<div style="font-size:11px;color:#999;">alias: ${c.aliasi.join(', ')}</div>` : ''}
                 </div>
-                <div class="cijena">${(c.cijena || 0).toFixed(3)} €</div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <div class="cijena" onclick="odaberiArtikal(${idxCj})">${(c.cijena || 0).toFixed(3)} €</div>
+                    <button class="btn btn-sm btn-info" onclick="otvoriEditCjenovnik(${idxCj})" title="Uredi trajno u cjenovniku">✏️</button>
+                </div>
             </div>
         `;
     });
@@ -1192,11 +1218,13 @@ async function odaberiArtikal(idxCj) {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
+    // ** Ažuriranje artikla u popisu **
     artikal.cijena = cj.cijena;
     artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
+    // ** Mapiranje (Alias) **
     if (!cj.aliasi) cj.aliasi = [];
     const normTrenutni = normalize(artikal.naziv);
     const vecPostoji = cj.aliasi.some(al => normalize(al) === normTrenutni);
@@ -1220,10 +1248,51 @@ async function odaberiArtikal(idxCj) {
     alert(`✅ Mapirano!\n\n"${artikal.naziv}" → "${cj.naziv}"\nCijena: ${cj.cijena.toFixed(3)} €\n\nMapiranje sačuvano za buduće popise.`);
 }
 
-function upisiCijenuRucno() {
+// ** OTVARANJE CJENOVNIKA IZ POPISA (trajno) **
+let editCjKontekst = null; // { idxCj }
+
+function otvoriEditCjenovnik(idxCj) {
     if (!povezivanjeKontekst) return;
-    let artikal;
+    editCjKontekst = { idxCj: idxCj };
+    const cj = data.cjenovnik[idxCj];
     
+    document.getElementById('editCjenovnikInfo').innerHTML = `
+        <div class="info-box info-info" style="font-size:13px;">
+            Ovdje mijenjaš podatke trajno u cjenovniku. Promjena će se odmah primijeniti i na tvoj popis.
+        </div>
+    `;
+    document.getElementById('editCjNaziv').value = cj.naziv;
+    document.getElementById('editCjCijena').value = cj.cijena || 0;
+    document.getElementById('editCjAliasi').value = (cj.aliasi || []).join(', ');
+    
+    showModal('editCjenovnikModal');
+}
+
+async function sacuvajEditCjenovnik() {
+    if (!editCjKontekst || !povezivanjeKontekst) return;
+    
+    const idxCj = editCjKontekst.idxCj;
+    const cj = data.cjenovnik[idxCj];
+    
+    const naziv = document.getElementById('editCjNaziv').value.trim();
+    if (!naziv) { alert('Naziv ne može biti prazan!'); return; }
+    
+    const cijena = parseFloat(document.getElementById('editCjCijena').value) || 0;
+    const aliasiStr = document.getElementById('editCjAliasi').value.trim();
+    let aliasi = aliasiStr ? aliasiStr.split(',').map(s => s.trim()).filter(s => s) : [];
+    
+    // Ako se naziv promijenio, stari naziv ide u aliasе
+    if (normalize(naziv) !== normalize(cj.naziv) && !aliasi.some(al => normalize(al) === normalize(cj.naziv))) {
+        aliasi.push(cj.naziv);
+    }
+    
+    // ** Ažuriraj cjenovnik **
+    cj.naziv = naziv;
+    cj.cijena = cijena;
+    cj.aliasi = aliasi;
+    
+    // ** Ažuriraj trenutni popis **
+    let artikal;
     if (povezivanjeKontekst.tip === 'novi') {
         artikal = trenutniPopis.artikli[povezivanjeKontekst.index];
     } else {
@@ -1231,23 +1300,32 @@ function upisiCijenuRucno() {
         artikal = lokal.popisi[prikazanPopisIndex].artikli[povezivanjeKontekst.index];
     }
     
-    const cijena = prompt(`Upiši cijenu za "${artikal.naziv}" (€):`, artikal.cijena || 0);
-    if (cijena === null) return;
-    const c = parseFloat(cijena) || 0;
-    artikal.cijena = c;
-    artikal.pronadjena = c > 0;
+    artikal.cijena = cijena;
+    artikal.pronadjena = true;
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
+    // Dodaj naziv iz popisa u aliasе ako već nije
+    if (!aliasi.some(al => normalize(al) === normalize(artikal.naziv)) && normalize(artikal.naziv) !== normalize(naziv)) {
+        cj.aliasi.push(artikal.naziv);
+    }
+    
+    await saveToCloud();
+    
+    closeModal('editCjenovnikModal');
     closeModal('poveziModal');
+    editCjKontekst = null;
     povezivanjeKontekst = null;
     
     if (prikazanLokalId !== null && prikazanPopisIndex !== null) {
         renderPopisContent();
+        renderMain();
     }
     if (trenutniPopis) {
         renderPreviewNovi();
     }
+    
+    alert(`✅ Sačuvano trajno u cjenovnik!\n\nNaziv: "${naziv}"\nCijena: ${cijena.toFixed(3)} €\n\nPromjena je primijenjena na ovaj popis i sve buduće.`);
 }
 
 async function dodajNoviArtikalIzPovezi() {
@@ -2453,6 +2531,7 @@ window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
         event.target.classList.remove('active');
         if (event.target.id === 'exportModal') window._exportLokalId = null;
+        if (event.target.id === 'editCjenovnikModal') editCjKontekst = null;
     }
 };
 </script>
