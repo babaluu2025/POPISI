@@ -1025,11 +1025,8 @@ function ucitajExcel(event) {
                 if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
                 
                 const jm = idxJM >= 0 ? toStr(row[idxJM]).trim() : '';
-                // Apsolutne vrijednosti za Manjak i Višak
                 const manjak = idxManjak >= 0 ? Math.abs(parseBroj(row[idxManjak])) : 0;
                 const visak = idxVisak >= 0 ? Math.abs(parseBroj(row[idxVisak])) : 0;
-                
-                // Konačno je Višak - Manjak
                 const kolicina = visak - manjak;
                 
                 let cijena = 0;
