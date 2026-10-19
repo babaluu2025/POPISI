@@ -1025,8 +1025,11 @@ function ucitajExcel(event) {
                 if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
                 
                 const jm = idxJM >= 0 ? toStr(row[idxJM]).trim() : '';
+                // Uzimamo apsolutne vrijednosti da se riješimo duplih minusa iz Excela
                 const manjak = idxManjak >= 0 ? Math.abs(parseBroj(row[idxManjak])) : 0;
                 const visak = idxVisak >= 0 ? Math.abs(parseBroj(row[idxVisak])) : 0;
+                
+                // Ispravno računamo Konačno: Višak - Manjak
                 const kolicina = visak - manjak;
                 
                 let cijena = 0;
@@ -2345,30 +2348,33 @@ async function osvjeziCijeneUMenadzeru() {
     const lokal = getLokal(lokalId);
     
     if (!lokal) return;
-    if (!confirm("Ovo će proći kroz SVE popise ovog lokala i ponovo izračunati cijene na osnovu trenutnog stanja u cjenovniku.\n\nAko je neki artikal sada ispravno mapiran, greška će nestati.\n\nNastaviti?")) return;
+    if (!confirm("Ovo će proći kroz SVE sačuvane popise ovog lokala.\n\nIspravit će stare greške (duple minuse) i ponovo izračunati tačne vrijednosti na osnovu Manjka, Viška i Cijene.\n\nNastaviti?")) return;
     
     let promijenjeno = 0;
     
     lokal.popisi.forEach(popis => {
         popis.artikli.forEach(artikal => {
-            const cj = nadjiCijenu(artikal.naziv);
+            // 1. Uzimamo apsolutne vrijednosti (brišemo stare greške sa minusima)
+            const absManjak = Math.abs(artikal.manjak || 0);
+            const absVisak = Math.abs(artikal.visak || 0);
             
+            // 2. Uvijek ispravno računamo konačno: Višak - Manjak
+            const ispravnoKolicina = absVisak - absManjak;
+            
+            // 3. Ažuriramo cijenu ako je ima u cjenovniku
+            const cj = nadjiCijenu(artikal.naziv);
             if (cj) {
-                if (artikal.cijena !== cj.cijena) {
-                    artikal.cijena = cj.cijena;
-                    artikal.pronadjena = true;
-                    promijenjeno++;
-                }
-            } else {
-                if (artikal.cijena > 0) {
-                    artikal.cijena = 0;
-                    artikal.pronadjena = false;
-                    promijenjeno++;
-                }
+                artikal.cijena = cj.cijena;
+                artikal.pronadjena = true;
             }
             
-            artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
-            artikal.vrijednost = artikal.kolicina * (artikal.cijena || 0);
+            // 4. Upisujemo ispravne vrijednosti nazad u popis
+            artikal.manjak = absManjak;
+            artikal.visak = absVisak;
+            artikal.kolicina = ispravnoKolicina;
+            artikal.vrijednost = ispravnoKolicina * (artikal.cijena || 0);
+            
+            promijenjeno++;
         });
     });
     
@@ -2376,7 +2382,7 @@ async function osvjeziCijeneUMenadzeru() {
     renderManager();
     renderMain();
     
-    alert(`✅ Završeno!\n\nOsvježeno artikala: ${promijenjeno}\n\nMenadžer i glavni ekran su sada ažurirani.`);
+    alert(`✅ Sve stare liste su uspješno ispravljene!\n\nObrađeno artikala: ${promijenjeno}\n\nSada su svi manjkovi i viškovi tačno sabrani.`);
 }
 
 async function dodajSveNedostajuceUCjenovnik() {
