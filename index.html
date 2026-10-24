@@ -253,6 +253,14 @@
             <div style="font-size:12px;color:#666;margin-top:5px;">Kolone: Naziv, J.M., Manjak, Višak</div>
         </div>
         <input type="file" id="excelInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="ucitajExcel(event)">
+        
+        <!-- NOVO: BRZI PASTE -->
+        <div style="margin-top:15px;border-top:2px dashed #ddd;padding-top:15px;">
+            <div style="font-weight:bold;margin-bottom:8px;">📋 Ili zalijepi tabelu direktno iz Excela:</div>
+            <textarea id="pasteInput" class="search-input" style="height:150px;font-family:monospace;font-size:12px;" placeholder="Zalijepi ovdje tekst iz Excela (Ctrl+V)&#10;Kolone: Naziv, Grupa, J.M., Manjak, Višak&#10;ili: Naziv, J.M., Manjak, Višak"></textarea>
+            <button onclick="obradiPaste()" class="btn btn-purple" style="width:100%;padding:12px;margin-top:8px;">📥 Obradi zalijepljeni tekst</button>
+        </div>
+        
         <div id="previewNovi" style="margin-top:15px;"></div>
         <div id="dugmadNovi" style="display:none;gap:10px;margin-top:10px;flex-wrap:wrap;">
             <button onclick="sacuvajCijeneICjenovnik()" class="btn btn-info" style="flex:1;padding:12px;font-size:15px;">💾 Sačuvaj cijene u cjenovnik</button>
@@ -500,7 +508,6 @@ function migrateData() {
     if (!data.cjenovnik) data.cjenovnik = [];
     data.cjenovnik.forEach(a => { if (!a.aliasi) a.aliasi = []; });
     
-    // Obriši stare lokalne cjenovnike ako postoje (vraćamo se na globalni)
     if (data.lokali) {
         data.lokali.forEach(l => {
             delete l.cjenovnik;
@@ -978,6 +985,9 @@ function showNoviPopis() {
     document.getElementById('previewNovi').innerHTML = '';
     document.getElementById('dugmadNovi').style.display = 'none';
     
+    const ta = document.getElementById('pasteInput');
+    if (ta) ta.value = '';
+    
     const selLokal = document.getElementById('noviLokal');
     selLokal.innerHTML = data.lokali.map(l => `<option value="${l.id}">${l.naziv}</option>`).join('');
     
@@ -994,6 +1004,114 @@ function showNoviPopisZaSektor(sektor) {
     });
 }
 
+// ==================== OBRADA ZALIJEPLJENOG TEKSTA ====================
+function obradiPaste() {
+    const tekst = document.getElementById('pasteInput').value.trim();
+    if (!tekst) {
+        alert('⚠️ Zalijepi tekst prvo!');
+        return;
+    }
+    
+    try {
+        const linije = tekst.split(/\r?\n/).filter(l => l.trim());
+        if (linije.length === 0) {
+            alert('❌ Nema redova.');
+            return;
+        }
+        
+        // Detektuj separator
+        let separator = '\t';
+        const prva = linije[0];
+        if (prva.includes('\t')) separator = '\t';
+        else if (prva.includes(';')) separator = ';';
+        else if (prva.includes(',')) {
+            const brojZareza = (prva.match(/,/g) || []).length;
+            if (brojZareza >= 4) separator = ',';
+            else separator = '\t';
+        }
+        
+        // Preskoči header
+        let startIndex = 0;
+        const prvaLower = prva.toLowerCase();
+        if (prvaLower.includes('naziv') || prvaLower.includes('grupa')) {
+            startIndex = 1;
+        }
+        
+        const artikli = [];
+        
+        for (let i = startIndex; i < linije.length; i++) {
+            const linija = linije[i].trim();
+            if (!linija) continue;
+            
+            let dijelovi;
+            if (separator === ',') {
+                dijelovi = linija.split(',');
+                if (dijelovi.length > 5) {
+                    const visak = dijelovi.length - 5;
+                    const naziv = dijelovi.slice(0, 1 + visak).join(',');
+                    dijelovi = [naziv, ...dijelovi.slice(1 + visak)];
+                }
+            } else {
+                dijelovi = linija.split(separator);
+            }
+            
+            if (dijelovi.length < 2) continue;
+            
+            dijelovi = dijelovi.map(d => d.trim().replace(/^"|"$/g, ''));
+            
+            const naziv = dijelovi[0];
+            if (!naziv || naziv.toLowerCase().includes('ukupno')) continue;
+            
+            const grupa = dijelovi[1] || '';
+            const jm = dijelovi[2] || '';
+            
+            let manjak, visak;
+            if (dijelovi.length === 4) {
+                manjak = parseBroj(dijelovi[2]);
+                visak = parseBroj(dijelovi[3]);
+            } else {
+                manjak = parseBroj(dijelovi[3]);
+                visak = parseBroj(dijelovi[4]);
+            }
+            
+            const apsManjak = Math.abs(manjak);
+            const apsVisak = Math.abs(visak);
+            const kolicina = apsVisak - apsManjak;
+            
+            let cijena = 0;
+            let pronadjena = false;
+            const cj = nadjiCijenu(naziv);
+            if (cj) {
+                cijena = cj.cijena;
+                pronadjena = true;
+            }
+            
+            const vrijednost = kolicina * cijena;
+            
+            artikli.push({
+                naziv, jm, grupa, manjak: apsManjak, visak: apsVisak,
+                kolicina, cijena, vrijednost, pronadjena, iskljucen: false
+            });
+        }
+        
+        if (artikli.length === 0) {
+            alert('❌ Nisam mogao da prepoznam nijedan artikal.\n\nProvjeri format:\nNaziv [tab] Grupa [tab] J.M. [tab] Manjak [tab] Višak\n\nili\n\nNaziv [tab] J.M. [tab] Manjak [tab] Višak');
+            return;
+        }
+        
+        trenutniPopis = { artikli: artikli };
+        renderPreviewNovi();
+        document.getElementById('dugmadNovi').style.display = 'flex';
+        
+        alert(`✅ Uspješno obrađeno ${artikli.length} artikala!`);
+        
+    } catch (err) {
+        console.error(err);
+        alert('❌ Greška pri obradi: ' + err.message);
+    }
+}
+
+// ==================== UVOZ IZ EXCELA ====================
 function ucitajExcel(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -1015,6 +1133,7 @@ function ucitajExcel(event) {
             
             const header = rows[headerIndex].map(c => toStr(c).toLowerCase().trim());
             const idxNaziv = header.findIndex(h => h.includes('naziv'));
+            const idxGrupa = header.findIndex(h => h.includes('grupa'));
             const idxJM = header.findIndex(h => h.includes('j.m') || h === 'jm');
             const idxManjak = header.findIndex(h => h.includes('manjak'));
             const idxVisak = header.findIndex(h => h.includes('višak') || h.includes('visak'));
@@ -1027,6 +1146,7 @@ function ucitajExcel(event) {
                 const naziv = toStr(row[idxNaziv]).trim();
                 if (!naziv || naziv.toLowerCase().includes('ukupno') || naziv.toLowerCase().includes('naplaceno')) continue;
                 
+                const grupa = idxGrupa >= 0 ? toStr(row[idxGrupa]).trim() : '';
                 const jm = idxJM >= 0 ? toStr(row[idxJM]).trim() : '';
                 const manjak = idxManjak >= 0 ? Math.abs(parseBroj(row[idxManjak])) : 0;
                 const visak = idxVisak >= 0 ? Math.abs(parseBroj(row[idxVisak])) : 0;
@@ -1046,8 +1166,8 @@ function ucitajExcel(event) {
                 const vrijednost = kolicina * cijena;
                 
                 artikli.push({
-                    naziv, jm, manjak, visak, kolicina, cijena, vrijednost,
-                    grupa: '', pronadjena, iskljucen: false
+                    naziv, jm, grupa, manjak, visak, kolicina, cijena, vrijednost,
+                    pronadjena, iskljucen: false
                 });
             }
             
@@ -1243,7 +1363,6 @@ async function odaberiArtikal(idxCj) {
     artikal.kolicina = (artikal.visak || 0) - (artikal.manjak || 0);
     artikal.vrijednost = artikal.kolicina * artikal.cijena;
     
-    // Zapamti stari naziv kao alias
     if (!cj.aliasi) cj.aliasi = [];
     const normStari = normalize(stariNaziv);
     const normNovi = normalize(cj.naziv);
@@ -1404,7 +1523,7 @@ async function dodajNoviArtikalIzPovezi() {
         }
     } else {
         data.cjenovnik.push({
-            naziv: naziv.trim(), grupa: '', jm: artikal.jm || 'KOM.', cijena,
+            naziv: naziv.trim(), grupa: artikal.grupa || '', jm: artikal.jm || 'KOM.', cijena,
             aliasi: [artikal.naziv]
         });
     }
@@ -1466,7 +1585,7 @@ async function sacuvajCijeneICjenovnik() {
 
 async function sacuvajNoviPopis() {
     if (!trenutniPopis || !trenutniPopis.artikli || trenutniPopis.artikli.length === 0) {
-        alert('⚠️ Učitaj Excel prvo!'); return;
+        alert('⚠️ Učitaj Excel ili zalijepi tekst prvo!'); return;
     }
     
     trenutniPopis.artikli.forEach(a => { 
@@ -1503,6 +1622,8 @@ async function sacuvajNoviPopis() {
     closeModal('noviPopisModal');
     trenutniPopis = null;
     document.getElementById('excelInput').value = '';
+    const ta = document.getElementById('pasteInput');
+    if (ta) ta.value = '';
     renderMain();
     alert('✅ Popis sačuvan!');
 }
@@ -1526,7 +1647,7 @@ function renderPopisContent() {
     const lokal = getLokal(prikazanLokalId);
     const p = lokal.popisi[prikazanPopisIndex];
     const c = document.getElementById('popisContent');
-    let html = '<div class="info-box info-info" style="margin-bottom:10px;font-size:13px;">💡 <strong>🔍</strong> = poveži. <strong>🚫</strong> = isključi iz računanja (ostaje u listi).</div>';
+    let html = '<div class="info-box info-info" style="margin-bottom:10px;font-size:13px;">💡 <strong>🔍</strong> = poveži. <strong>🚫</strong> = isključi iz računanja.</div>';
     html += '<table class="artikal-table"><thead><tr><th>Naziv</th><th>J.M.</th><th>Manjak</th><th>Višak</th><th>Konačno</th><th>Cijena €</th><th>VRIJEDNOST €</th><th class="no-print">Akcije</th></tr></thead><tbody>';
     
     let ukupnoManjak = 0;
@@ -2330,7 +2451,7 @@ async function dodajSveNedostajuceUCjenovnik() {
                 if (!postoji) {
                     data.cjenovnik.push({
                         naziv: artikal.naziv,
-                        grupa: '',
+                        grupa: artikal.grupa || '',
                         jm: artikal.jm || 'KOM.',
                         cijena: 0,
                         aliasi: []
