@@ -120,7 +120,7 @@
         .povezi-trenutni strong { color: #6f42c1; }
 
         .bez-cijena-box { display:flex; align-items:center; gap:10px; background:#f8f9ff; padding:12px; border-radius:6px; border:1px solid #d0d7ff; margin-bottom:12px; }
-        .bez-cijena-box input { width:20px; height:20px; cursor:pointer; }
+        .bez-cijena-box input[type="checkbox"] { width:20px; height:20px; cursor:pointer; }
         .bez-cijena-box label { margin:0; cursor:pointer; font-weight:bold; }
 
         @media print {
@@ -1806,14 +1806,12 @@ async function toggleBezCijenaPostojeci(checked) {
     const p = lokal.popisi[prikazanPopisIndex];
     p.bezCijena = checked;
     
-    // Ako se uključuje "bez cijena" - postavi cijene na 0 (ali ne diraj cjenovnik)
     if (checked) {
         (p.artikli || []).forEach(a => {
             a.cijena = 0;
             a.vrijednost = 0;
         });
     } else {
-        // Vrati cijene iz cjenovnika
         (p.artikli || []).forEach(a => {
             const cj = nadjiCijenu(a.naziv);
             if (cj) {
@@ -2476,10 +2474,10 @@ function renderManager() {
     const godina = parseInt(document.getElementById('managerGodina').value);
     const sektor = document.getElementById('managerSektor').value;
     const c = document.getElementById('managerContent');
-    
+
     const lokal = getLokal(lokalId);
     if (!lokal) { c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Odaberite lokal.</p>'; return; }
-    
+
     if (lokalImaSifru(lokal) && !lokalJeOtkljucanSada(lokal)) {
         c.innerHTML = `
             <div class="info-box info-warning" style="text-align:center;padding:30px;">
@@ -2490,83 +2488,241 @@ function renderManager() {
         `;
         return;
     }
-    
-    const popisi = lokal.popisi.filter(p => p.godina === godina && p.sektor === sektor && !p.bezCijena).sort((a, b) => a.mesec - b.mesec);
+
+    const popisi = lokal.popisi
+        .filter(p => p.godina === godina && p.sektor === sektor && !p.bezCijena)
+        .sort((a, b) => a.mesec - b.mesec);
+
     if (popisi.length === 0) {
         c.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Nema popisa sa cijenama.</p>';
         return;
     }
-    
+
+    // ==================== AGREGACIJA ====================
+    // artikliMap[key] = { prikazniNaziv, jm, poMjesecu: { [pIndex]: { kol, vrijednost } } }
     const artikliMap = {};
-    
+
     popisi.forEach((p, pIndex) => {
         (p.artikli || []).forEach(a => {
             if (!a.naziv) return;
             if (a.iskljucen) return;
-            
+
             const cjArtikal = nadjiCijenu(a.naziv);
             const key = cjArtikal ? normalize(cjArtikal.naziv) : normalize(a.naziv);
             if (!key) return;
-            
+
             const prikazniNaziv = cjArtikal ? cjArtikal.naziv : a.naziv;
-            
+            const jm = (cjArtikal && cjArtikal.jm) || a.jm || 'KOM.';
+
             if (!artikliMap[key]) {
-                artikliMap[key] = { prikazniNaziv, poMjesecu: {} };
+                artikliMap[key] = { prikazniNaziv, jm, poMjesecu: {} };
             }
-            
+
             const kol = (a.visak || 0) - (a.manjak || 0);
             const vrijednost = kol * (a.cijena || 0);
-            
+
             if (!artikliMap[key].poMjesecu[pIndex]) {
-                artikliMap[key].poMjesecu[pIndex] = { vrijednost: 0, kol: 0 };
+                artikliMap[key].poMjesecu[pIndex] = { kol: 0, vrijednost: 0 };
             }
-            artikliMap[key].poMjesecu[pIndex].vrijednost += vrijednost;
             artikliMap[key].poMjesecu[pIndex].kol += kol;
+            artikliMap[key].poMjesecu[pIndex].vrijednost += vrijednost;
         });
     });
-    
-    const artikliKeys = Object.keys(artikliMap).sort((a, b) => {
-        return artikliMap[a].prikazniNaziv.localeCompare(artikliMap[b].prikazniNaziv);
-    });
-    
+
+    const artikliKeys = Object.keys(artikliMap).sort((a, b) =>
+        artikliMap[a].prikazniNaziv.localeCompare(artikliMap[b].prikazniNaziv)
+    );
+
+    // ==================== UI ====================
     let html = `<h3 style="margin-bottom:10px;">${lokal.naziv} — ${sektor} — ${godina}</h3>`;
     html += `<div class="info-box info-info" style="font-size:12px;margin-bottom:10px;">
         💡 Isključeni artikli ne ulaze u zbir. Popisi sa oznakom "bez cijena" se preskaču.
     </div>`;
-    html += '<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr><th style="min-width:180px;">Artikal</th>';
+
+    // ---- Toggle prikaza: Cijena (€) / Količina (J.M.) ----
+    html += `
+        <div class="bez-cijena-box" style="background:#fff; border:1px solid #ddd; margin-bottom:12px;">
+            <strong style="margin-right:12px;">Prikaz:</strong>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-right:15px;">
+                <input type="radio" name="managerPrikaz" value="cijena" checked
+                       onchange="promijeniPrikazManagera(this.value)">
+                💶 Cijena (€)
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="radio" name="managerPrikaz" value="kolicina"
+                       onchange="promijeniPrikazManagera(this.value)">
+                📦 Količina (J.M.)
+            </label>
+        </div>
+    `;
+
+    // ---- Tabela: Cijena (€) ----
+    html += `<div id="managerPrikazCijena">`;
+    html += `<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr>`;
+    html += `<th style="min-width:180px;">Artikal</th>`;
     popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}<br><small>€</small></th>`; });
-    html += '<th>UKUPNO</th></tr></thead><tbody>';
-    
-    const totalPoMjesecu = {};
-    
+    html += `<th style="background:#e8f5e9;">➕ Višak</th>`;
+    html += `<th style="background:#ffebee;">➖ Manjak</th>`;
+    html += `<th style="background:#fff3cd;">Neto</th>`;
+    html += `</tr></thead><tbody>`;
+
+    const totalPoMjesecu = {}; // { pIndex: { plus, minus } }
+    let grandPlus = 0, grandMinus = 0;
+
     artikliKeys.forEach(key => {
         const item = artikliMap[key];
-        html += `<tr><td style="font-weight:bold;">${item.prikazniNaziv}</td>`;
-        let ukupnoArtikal = 0;
-        
+        html += `<tr><td style="font-weight:bold;">${item.prikazniNaziv} <span style="font-size:11px;color:#888;">(${item.jm})</span></td>`;
+
+        let plusArt = 0, minusArt = 0;
+
         popisi.forEach((p, pIndex) => {
             const mj = item.poMjesecu[pIndex];
             const v = mj ? mj.vrijednost : 0;
-            ukupnoArtikal += v;
-            
-            if (!totalPoMjesecu[pIndex]) totalPoMjesecu[pIndex] = 0;
-            totalPoMjesecu[pIndex] += v;
-            
+
+            if (v > 0) plusArt += v;
+            else if (v < 0) minusArt += v;
+
+            if (!totalPoMjesecu[pIndex]) totalPoMjesecu[pIndex] = { plus: 0, minus: 0 };
+            if (v > 0) totalPoMjesecu[pIndex].plus += v;
+            else if (v < 0) totalPoMjesecu[pIndex].minus += v;
+
             html += `<td style="color:${bojaVrijednosti(v)};">${v !== 0 ? v.toFixed(2) : '-'}</td>`;
         });
-        
-        html += `<td style="font-weight:bold;background:#fff3cd;color:${bojaVrijednosti(ukupnoArtikal)};">${ukupnoArtikal.toFixed(2)} €</td></tr>`;
+
+        const netoArt = plusArt + minusArt;
+        grandPlus += plusArt;
+        grandMinus += minusArt;
+
+        html += `<td style="color:#28a745;font-weight:bold;">${plusArt > 0 ? '+' + plusArt.toFixed(2) : '-'}</td>`;
+        html += `<td style="color:#dc3545;font-weight:bold;">${minusArt < 0 ? minusArt.toFixed(2) : '-'}</td>`;
+        html += `<td style="background:#fff3cd;font-weight:bold;color:${bojaVrijednosti(netoArt)};">${netoArt.toFixed(2)} €</td>`;
+        html += `</tr>`;
     });
-    
-    html += `<tr class="total-row"><td>UKUPNO:</td>`;
-    let grand = 0;
+
+    // Red: UKUPNO po mjesecu (neto)
+    html += `<tr class="total-row"><td>UKUPNO po mjesecu (neto):</td>`;
     popisi.forEach((p, pIndex) => {
-        const t = totalPoMjesecu[pIndex] || 0;
-        grand += t;
-        html += `<td style="color:${bojaVrijednosti(t)};">${t.toFixed(2)} €</td>`;
+        const t = totalPoMjesecu[pIndex] || { plus: 0, minus: 0 };
+        const neto = t.plus + t.minus;
+        html += `<td style="color:${bojaVrijednosti(neto)};">${neto.toFixed(2)} €</td>`;
     });
-    html += `<td style="color:${bojaVrijednosti(grand)};">${grand.toFixed(2)} €</td></tr></tbody></table></div>`;
+    html += `<td style="color:#28a745;">+${grandPlus.toFixed(2)}</td>`;
+    html += `<td style="color:#dc3545;">${grandMinus.toFixed(2)}</td>`;
+    const grandNeto = grandPlus + grandMinus;
+    html += `<td style="color:${bojaVrijednosti(grandNeto)};font-size:15px;">${grandNeto.toFixed(2)} €</td>`;
+    html += `</tr>`;
+
+    // Red: PLUS (višak) po mjesecu
+    html += `<tr style="background:#e8f5e9;"><td>➕ Višak po mjesecu:</td>`;
+    popisi.forEach((p, pIndex) => {
+        const t = totalPoMjesecu[pIndex] || { plus: 0 };
+        html += `<td style="color:#28a745;font-weight:bold;">${t.plus > 0 ? '+' + t.plus.toFixed(2) : '-'}</td>`;
+    });
+    html += `<td colspan="3" style="color:#28a745;font-weight:bold;">Σ +${grandPlus.toFixed(2)} €</td></tr>`;
+
+    // Red: MINUS (manjak) po mjesecu
+    html += `<tr style="background:#ffebee;"><td>➖ Manjak po mjesecu:</td>`;
+    popisi.forEach((p, pIndex) => {
+        const t = totalPoMjesecu[pIndex] || { minus: 0 };
+        html += `<td style="color:#dc3545;font-weight:bold;">${t.minus < 0 ? t.minus.toFixed(2) : '-'}</td>`;
+    });
+    html += `<td colspan="3" style="color:#dc3545;font-weight:bold;">Σ ${grandMinus.toFixed(2)} €</td></tr>`;
+
+    html += `</tbody></table></div></div>`;
+
+    // ---- Tabela: Količina (J.M.) ----
+    html += `<div id="managerPrikazKolicina" style="display:none; margin-top:20px;">`;
+    html += `<h4 style="margin-bottom:8px;">📦 Količinski pregled (kom / lit / kg po J.M. artikla)</h4>`;
+    html += `<div style="overflow-x:auto;"><table class="artikal-table"><thead><tr>`;
+    html += `<th style="min-width:180px;">Artikal</th><th>J.M.</th>`;
+    popisi.forEach(p => { html += `<th>${MESECI[p.mesec].substring(0,3)}</th>`; });
+    html += `<th style="background:#e8f5e9;">➕ Višak</th>`;
+    html += `<th style="background:#ffebee;">➖ Manjak</th>`;
+    html += `<th style="background:#fff3cd;">Neto</th>`;
+    html += `</tr></thead><tbody>`;
+
+    const totalKolPoMjesecu = {};
+    const grandKolPoJM = {}; // { 'KOM.': {plus, minus}, 'LIT.': {...}, ... }
+    let grandKolPlus = 0, grandKolMinus = 0;
+
+    artikliKeys.forEach(key => {
+        const item = artikliMap[key];
+        html += `<tr><td style="font-weight:bold;">${item.prikazniNaziv}</td><td style="text-align:center;">${item.jm}</td>`;
+
+        let plusArt = 0, minusArt = 0;
+
+        popisi.forEach((p, pIndex) => {
+            const mj = item.poMjesecu[pIndex];
+            const k = mj ? mj.kol : 0;
+
+            if (k > 0) plusArt += k;
+            else if (k < 0) minusArt += k;
+
+            if (!totalKolPoMjesecu[pIndex]) totalKolPoMjesecu[pIndex] = 0;
+            totalKolPoMjesecu[pIndex] += k;
+
+            html += `<td style="color:${k < 0 ? '#dc3545' : (k > 0 ? '#28a745' : '#666')};">${k !== 0 ? formatBroj(k) : '-'}</td>`;
+        });
+
+        const netoArt = plusArt + minusArt;
+        grandKolPlus += plusArt;
+        grandKolMinus += minusArt;
+
+        if (!grandKolPoJM[item.jm]) grandKolPoJM[item.jm] = { plus: 0, minus: 0 };
+        grandKolPoJM[item.jm].plus += plusArt;
+        grandKolPoJM[item.jm].minus += minusArt;
+
+        html += `<td style="color:#28a745;font-weight:bold;">${plusArt > 0 ? '+' + formatBroj(plusArt) : '-'}</td>`;
+        html += `<td style="color:#dc3545;font-weight:bold;">${minusArt < 0 ? formatBroj(minusArt) : '-'}</td>`;
+        html += `<td style="background:#fff3cd;font-weight:bold;color:${netoArt < 0 ? '#dc3545' : (netoArt > 0 ? '#28a745' : '#666')};">${netoArt > 0 ? '+' : ''}${formatBroj(netoArt)}</td>`;
+        html += `</tr>`;
+    });
+
+    // UKUPNO po mjesecu (miješano)
+    html += `<tr class="total-row"><td colspan="2">UKUPNO sve J.M. (miješano):</td>`;
+    popisi.forEach((p, pIndex) => {
+        const t = totalKolPoMjesecu[pIndex] || 0;
+        html += `<td style="color:${t < 0 ? '#dc3545' : (t > 0 ? '#28a745' : '#666')};">${t !== 0 ? (t > 0 ? '+' : '') + formatBroj(t) : '-'}</td>`;
+    });
+    html += `<td style="color:#28a745;">+${formatBroj(grandKolPlus)}</td>`;
+    html += `<td style="color:#dc3545;">${formatBroj(grandKolMinus)}</td>`;
+    const grandKolNeto = grandKolPlus + grandKolMinus;
+    html += `<td style="color:${grandKolNeto < 0 ? '#dc3545' : (grandKolNeto > 0 ? '#28a745' : '#666')};font-size:15px;">${grandKolNeto > 0 ? '+' : ''}${formatBroj(grandKolNeto)}</td>`;
+    html += `</tr>`;
+
+    html += `</tbody></table></div>`;
+
+    // Rekapitulacija po J.M. grupi
+    const jmKeys = Object.keys(grandKolPoJM).sort();
+    if (jmKeys.length > 0) {
+        html += `<h4 style="margin:18px 0 8px;">📊 Rekapitulacija po J.M.</h4>`;
+        html += `<table class="artikal-table" style="max-width:600px;"><thead><tr>`;
+        html += `<th>J.M.</th><th style="background:#e8f5e9;">➕ Višak</th><th style="background:#ffebee;">➖ Manjak</th><th style="background:#fff3cd;">Neto</th>`;
+        html += `</tr></thead><tbody>`;
+        jmKeys.forEach(jm => {
+            const g = grandKolPoJM[jm];
+            const neto = g.plus + g.minus;
+            html += `<tr>
+                <td style="font-weight:bold;">${jm}</td>
+                <td style="color:#28a745;">${g.plus > 0 ? '+' + formatBroj(g.plus) : '-'}</td>
+                <td style="color:#dc3545;">${g.minus < 0 ? formatBroj(g.minus) : '-'}</td>
+                <td style="background:#fff3cd;font-weight:bold;color:${neto < 0 ? '#dc3545' : (neto > 0 ? '#28a745' : '#666')};">${neto > 0 ? '+' : ''}${formatBroj(neto)} ${jm}</td>
+            </tr>`;
+        });
+        html += `</tbody></table>`;
+    }
+
+    html += `</div>`;
+
     c.innerHTML = html;
+}
+
+// Pomoćna: prebacivanje između € i količinskog prikaza
+function promijeniPrikazManagera(vrijednost) {
+    const elC = document.getElementById('managerPrikazCijena');
+    const elK = document.getElementById('managerPrikazKolicina');
+    if (elC) elC.style.display = vrijednost === 'cijena' ? 'block' : 'none';
+    if (elK) elK.style.display = vrijednost === 'kolicina' ? 'block' : 'none';
 }
 
 async function osvjeziCijeneUMenadzeru() {
@@ -2579,7 +2735,6 @@ async function osvjeziCijeneUMenadzeru() {
     let promijenjeno = 0;
     
     lokal.popisi.forEach(popis => {
-        // Preskoči popise bez cijena
         if (popis.bezCijena) return;
         
         popis.artikli.forEach(artikal => {
